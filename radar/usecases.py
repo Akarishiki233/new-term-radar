@@ -484,3 +484,21 @@ def run(cfg: dict, state: Path, names: list[str], repos: dict[str, str], today: 
             "related": use_related, "tails": {n: v for n, v in tails.items() if v}, "cosearch": cosearch,
             "related_errors": related_errors, "geo": c["related_geo"], "country_errors": local_errors,
             "cost_micros": cost + c0 + c2 + c3 + c4}
+
+
+READ_KINDS = {"x", "hf", "breakout", "newsite"}
+READ_MIN = 0.8
+
+
+def names_to_read(leads_today: list[dict], recent_sources: list[dict]) -> list[str]:
+    """The leads worth reading for their generic terms: a thing someone released or built,
+    not a word that surged. Terms that only the word-count signals found (new sitemap URLs,
+    repos sharing a word) are words like "mcd" and "context protocol", or URL fragments
+    like "kr.co.klisten.api": our first live run read five of those. A lead
+    needs a signal that reports things and a name score of READ_MIN; unscored leads pass."""
+    out = []
+    for r in [*leads_today, *recent_sources]:
+        named = r.get("named")
+        if READ_KINDS & set(r.get("kinds", [])) and (named is None or named >= READ_MIN) and r["term"] not in out:
+            out.append(r["term"])
+    return out

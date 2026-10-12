@@ -81,8 +81,8 @@ def cmd_daily(args, cfg: dict, state: Path) -> int:
     extra = {"judge": judged, "record": run(lambda: {"recorded": store.record(conn, report.to_record(cfg, lead))})}
     # With ① run apart, the daily report lists what that job kept since yesterday.
     extra["recent_sources"] = run(lambda: {"rows": store.recent_sources(conn)}, not {"x", "hf"} <= args.skip)
-    # The names to read for their generic terms: today's new names, then yesterday's source leads.
-    names = [r["term"] for r in report.to_record(cfg, lead)] + [r["term"] for r in extra["recent_sources"].get("rows", [])]
+    # The names to read for their generic terms: things, not words that surged (usecases.names_to_read).
+    names = usecases.names_to_read(report.to_record(cfg, lead), extra["recent_sources"].get("rows", []))
     repos = {r["term"]: r["repo"] for r in lead if r.get("repo")}
     extra["usecases"] = run(lambda: usecases.run(cfg, state, list(dict.fromkeys(names)), repos),
                             "usecases" in args.skip or not cfg["usecases"]["per_day"])

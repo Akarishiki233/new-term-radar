@@ -702,3 +702,12 @@ def test_started_rising_is_the_run_that_holds_the_peak_not_an_earlier_blip():
     points = _month([20] * 19 + [45] + [20] * 5 + [70, 100, 68, 51, 42])
     s = usecases.shape(points, TODAY, usecases.COUNTRY)
     assert s["rose"] and s["started"] == "2026-10-08" and s["peak_day"] == "2026-10-09"
+
+
+def test_only_things_are_read_for_generic_terms_not_words_that_surged():
+    today = [{"term": "mcd", "kinds": ["github"], "named": 0.75}, {"term": "kr.co.klisten.api", "kinds": ["sitemap"], "named": 0.78},
+             {"term": "photocraft", "kinds": ["breakout"], "named": 0.95}, {"term": "dots", "kinds": ["breakout"], "named": 0.65},
+             {"term": "hailuo", "kinds": ["newsite", "sitemap"]}]
+    recent = [{"term": "qwen image 2.1", "kinds": ["hf"], "named": 0.96}, {"term": "use rea", "kinds": ["x"], "named": 0.72},
+              {"term": "photocraft", "kinds": ["x"], "named": 0.9}]
+    assert usecases.names_to_read(today, recent) == ["photocraft", "hailuo", "qwen image 2.1"]

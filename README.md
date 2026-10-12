@@ -49,7 +49,7 @@ flowchart LR
 | ⑤ Review | Each lead checked in Google Trends 14 days later, against its own baseline; hit rate and days ahead per signal | AIsa key | $0.0012 per search variant |
 | Name judge | A small model scores every term: the name of one specific thing, or a common word? | AIsa key | a fraction of a cent per run |
 
-Prices are what AIsa charged in October 2026. With the example config (24 X accounts read three times a day) a month costs about $7, nearly all of it the X reads. Read fewer accounts, or read them once a day, and it drops in proportion.
+Prices are what AIsa charged in October 2026. With the example config (35 X accounts read three times a day) a month costs about $10, nearly all of it the X reads. Read fewer accounts, or read them once a day, and it drops in proportion.
 
 ## One key
 

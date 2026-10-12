@@ -47,9 +47,47 @@ flowchart LR
 | ③ New sites | Domains registered and first indexed in the last 90 days that already rank for 20+ keywords | AIsa key | about $0.13 per query, weekly |
 | ④ Search Console | Queries your site got impressions for, for the first time (fresh data) | your own Google token | free |
 | ⑤ Review | Each lead checked in Google Trends 14 days later, against its own baseline; hit rate and days ahead per signal | AIsa key | $0.0012 per search variant |
+| Keyword table | For the day's new names: the generic search terms behind them (what people do with the new thing), each sized and given a decision | AIsa key | about $0.15 a day for 5 names |
 | Name judge | A small model scores every term: the name of one specific thing, or a common word? | AIsa key | a fraction of a cent per run |
 
-Prices are what AIsa charged in October 2026. With the example config (35 X accounts read three times a day) a month costs about $10, nearly all of it the X reads. Read fewer accounts, or read them once a day, and it drops in proportion.
+Prices are what AIsa charged in October 2026. With the example config (35 X accounts read three times a day, the keyword table for 5 names a day) a month costs about $15: $10 for the X reads, $5 for the keyword table. Read fewer accounts, or read them once a day, and it drops in proportion.
+
+## The keyword table
+
+A name is half of what you need. "SynthID Detector" has a short life as a keyword and belongs to Google; the job it does, "ai image detector", is what people keep searching, and nobody owns it. Each day the radar reads the new names once more and writes one table with both:
+
+```
+| Keyword | Type | Behind | New? | Est. searches/day | Started rising | Peak vs gpts | Peak day | Now | Decision |
+| **photocraft** | name | — | yes | 11416 | 2026-10-05 | 97 vs 3.1 | 2026-10-09 | still rising | **prioritize** |
+| **claude haiku 5.5** | name | — | no | 1669 | 2026-10-07 | 100 vs 23.7 | 2026-10-08 | still rising | **prioritize** |
+| **ai image detector** | generic | synthid detector | no | 2537 | — | 87 vs 31.6 | 2026-10-04 | flat | watch |
+| **photoshop alternative** ⚠ | generic | photocraft | no | 244 | — | 61 vs 61.7 | 2026-10-08 | flat | skip |
+```
+
+(a real run, 2026-10-12, shortened)
+
+How it is made (`radar/usecases.py`):
+
+1. **Evidence**: the most-liked posts that mention the name (X advanced search) and, for a repository, its README.
+2. **Phrases**: a model reads the evidence and writes the keyword an ordinary person would type for each job it sees people doing, with a quote that backs it. A phrase built on another product's name ("photoshop alternative") is kept and marked ⚠: demand often hangs on the incumbent, and whether to use someone's brand is your call.
+3. **Volume**: Google Ads monthly searches for every phrase, one batch call. Phrases under `min_volume` are dropped; most are.
+4. **Trends**, twice per row: the term alone gives the shape (new or not, the day it started rising, the peak, what it is doing now); the term beside a benchmark keyword (`gpts` by default) gives the size.
+
+Searches a day are estimates. A generic term's come from its own Google Ads volume, moved to today along its own Trends curve. The benchmark is then sized from those terms, and a name, which has no volume data yet, is sized against the benchmark.
+
+Decision: **prioritize** = rose in the last 30 days, still up, at least `min_daily` searches a day. **watch** = rose but smaller, too early to read, or flat with steady demand of that size. **skip** = fading, or flat and small.
+
+Each name is read twice, the day it appears and three days later, because on announcement day the posts are announcements and no use shows yet. The generic terms are kept as leads and reviewed after 14 days like the names.
+
+What to expect from it, from the first eight names we ran it on:
+
+- **The names rose; the generic terms did not, within five days.** PhotoCraft, Claude Haiku 5.5 and SynthID Detector all climbed clearly. None of the generic terms behind them moved in that time. A release sends people searching for its name first; whether the generic term follows later is what the 14-day review will show, and we have no result yet.
+- So the table's use today is to tell you **which existing demand a new thing serves and how big it is** ("ai image detector", about 2,500 searches a day), not to catch a generic term taking off.
+- For pure model releases (Claude Haiku 5.5, Nano Banana 2.1) the evidence was announcements and benchmarks, and the phrases proposed were weak ("ai coding assistant"). It works better for products and repositories that do one job.
+- **Google Trends' last two days are not settled.** For unrelated terms they came back as 0 and then 100, which reads as a spike. Our first pass was fooled by exactly this; every reader in the code now drops those two days, and a rise must last two days to count.
+- Google Ads volumes run about two months behind. Trends reads nothing reliable for terms under a few hundred searches a month.
+
+Set `"usecases": {"per_day": 0}` or pass `--skip usecases` to turn it off.
 
 ## One key
 
@@ -82,7 +120,7 @@ python -m radar daily --skip x,hf --out report.md  # everything else, once a day
 
 `sources` writes a report only when there is a new name. `daily` with `--skip x,hf` lists what `sources` kept in the last 24 hours. If you run only once a day, use `python -m radar daily` and skip nothing.
 
-Other flags: `--skip` takes any of `x,hf,breakout,sitemaps,newsites,gsc,review,judge`; `--new-sites` runs the weekly signal today; `--mail` sends the report (below); `--state DIR` moves the database and snapshots.
+Other flags: `--skip` takes any of `x,hf,breakout,sitemaps,newsites,gsc,review,judge,usecases`; `--new-sites` runs the weekly signal today; `--mail` sends the report (below); `--state DIR` moves the database and snapshots.
 
 ## What a report looks like
 
@@ -126,6 +164,7 @@ and from `sources`:
 | `breakout` | `window_days`, `min_stars`, `velocity_min` (stars a day), `delta_min` (stars since yesterday) |
 | `new_sites` | `queries`: a name and a SQL LIKE pattern on the domain (`"%ai%"`), one paid query each; `weekday` (0 = Monday) |
 | `review` | `after_days` (14) and `per_day` (5 leads a day) |
+| `usecases` | The keyword table. `per_day` (names read a day, 0 = off), `model`, `benchmark` (the keyword sizes are compared with), `min_volume` (monthly searches a phrase needs), `min_daily` (searches a day for "prioritize"), `recheck_days` (3) |
 | `gsc` | `site` (`sc-domain:example.com`) and `token_file`. Leave `{}` to turn the signal off |
 
 Please read each site's robots.txt before you add its sitemap, and keep `pause` at or above its crawl-delay. The example config makes a few dozen requests a day in total, spaced by `pause`.
@@ -157,7 +196,7 @@ python scripts/gsc_auth.py gsc_client.json   # opens a browser once, writes gsc_
 - **Names in posts** (`radar/terms.py`): capitalised words, words with a digit (`Qwen3.8`) or inner capitals (`HyperFrames`); a number after a name joins it (`Opus 5.5`). A name two accounts used counts; a name one account used needs 100 likes and must be unmistakably a name, since a capitalised word is often just the start of a sentence.
 - **Surges in sitemaps**: counted per distinct URL against the site's own baseline, so one page with a long slug cannot fake a wave.
 - **The judge** (`radar/judge.py`): one chat call per 25 terms, each with up to three places it appeared. If the call fails the report still goes out, unsorted.
-- **The review** (`radar/review.py`): a variant "rose" when its peak after the day we reported it clears its own earlier baseline by 2x and by 10 points. A word with an older meaning ("strata": rock layers, property law) has a high baseline and does not count; "niko1221 strata" going from 0 to something does.
+- **The review** (`radar/review.py`): a variant "rose" when its peak after the day we reported it clears its own earlier baseline by 2x and by 10 points. A word with an older meaning ("strata": rock layers, property law) has a high baseline and does not count; "niko1221 strata" going from 0 to something does. Trends' unsettled last two days are left out.
 
 ## What we measured, and what we have not
 

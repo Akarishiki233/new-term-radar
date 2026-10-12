@@ -109,7 +109,7 @@ def breakouts(cfg: dict, state: Path) -> dict:
             display = ""
         row["variants"] = variants(row, display)
         gain = t("note_breakout_gain", delta=row["delta"]) if row["delta"] is not None else ""
-        terms.append({"term": row["variants"][0], "recent": 1, "variants": row["variants"],
+        terms.append({"term": row["variants"][0], "recent": 1, "variants": row["variants"], "repo": row["repo"],
                       "note": t("note_breakout", repo=row["repo"], stars=row["stars"], velocity=row["velocity"], gain=gain),
                       "examples": [f"{row['repo']}: {row['description']}"]})
     return {"searched": len(repos), "first_run": before is None, "repos": rows, "terms": terms,

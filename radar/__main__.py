@@ -11,6 +11,7 @@ Signals:
   ③ newsites  domains registered in the last 90 days that already rank (weekly; AIsa)
   ④ gsc       queries your own site got impressions for, for the first time (optional)
   ⑤ review    leads from 14 days ago checked in Google Trends; hit rate per signal (AIsa)
+  usecases    the generic terms behind today's names, sized against a benchmark keyword (AIsa)
 
 `sources` runs only ① (they change by the hour) and writes a report only when there is a
 name or an error. `daily` runs everything; give it `--skip x,hf` when `sources` runs
@@ -27,10 +28,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import breakout, config, gsc, new_sites, notify, report, review, sitemaps, sources, store
+from . import breakout, config, gsc, new_sites, notify, report, review, sitemaps, sources, store, usecases
 from .i18n import t
 
-SKIPPABLE = {"x", "hf", "breakout", "sitemaps", "newsites", "gsc", "review", "judge"}
+SKIPPABLE = {"x", "hf", "breakout", "sitemaps", "newsites", "gsc", "review", "judge", "usecases"}
 
 
 def run(fn, skip: bool = False) -> dict:
@@ -78,14 +79,20 @@ def cmd_daily(args, cfg: dict, state: Path) -> int:
     lead, judged = report.leads(cfg, blocks)
     conn = store.connect(state)
     extra = {"judge": judged, "record": run(lambda: {"recorded": store.record(conn, report.to_record(cfg, lead))})}
-    rev = run(lambda: review.review(cfg, conn), "review" in args.skip)
-    summ = run(lambda: store.summary(conn))
     # With ① run apart, the daily report lists what that job kept since yesterday.
     extra["recent_sources"] = run(lambda: {"rows": store.recent_sources(conn)}, not {"x", "hf"} <= args.skip)
+    # The names to read for their generic terms: today's new names, then yesterday's source leads.
+    names = [r["term"] for r in report.to_record(cfg, lead)] + [r["term"] for r in extra["recent_sources"].get("rows", [])]
+    repos = {r["term"]: r["repo"] for r in lead if r.get("repo")}
+    extra["usecases"] = run(lambda: usecases.run(cfg, state, list(dict.fromkeys(names)), repos),
+                            "usecases" in args.skip or not cfg["usecases"]["per_day"])
+    run(lambda: store.record(conn, report.usecase_leads(extra["usecases"])))
+    rev = run(lambda: review.review(cfg, conn), "review" in args.skip)
+    summ = run(lambda: store.summary(conn))
     text = report.daily(cfg, lead, blocks, found, rev, summ, extra)
     if args.out:
         Path(args.out).with_suffix(".json").write_text(json.dumps(
-            {"leads": lead, **blocks, "gsc": found, "review": rev, "summary": summ}, ensure_ascii=False, indent=1, default=str))
+            {"leads": lead, **blocks, "gsc": found, "review": rev, "summary": summ, "keywords": extra["usecases"]}, ensure_ascii=False, indent=1, default=str))
     _finish(args, text, f"New-term radar {date.today()}")
     return 0
 

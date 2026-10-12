@@ -27,6 +27,16 @@ MAX_VARIANTS = 3      # each costs one Trends task ($0.0012 in October 2026)
 RISE_FACTOR, RISE_MIN = 2.0, 10
 RISE_SHARE = 0.25     # the rise starts where a series first covers this share of base -> peak
 TOOL = "post_dataforseo_keywords_trends_explore_live"
+# Google has not settled the last two days of a daily series: they come back as 0 and
+# then 100 for unrelated terms ("ai image detector": ..., 5, 5, 0, 100 on 2026-10-12),
+# which reads as a rise. Every reader drops them (settled()).
+UNSETTLED_DAYS = 2
+
+
+def settled(points: list[tuple], today: date) -> list[tuple]:
+    """A daily Trends series without its last UNSETTLED_DAYS days. Rows are (day, value, ...)."""
+    cut = today - timedelta(days=UNSETTLED_DAYS)
+    return [p for p in points if p[0] < cut]
 
 
 def rose(points: list[tuple[date, int]], first_seen: date) -> dict:
@@ -91,7 +101,7 @@ def review(cfg: dict, conn: sqlite3.Connection, today: date | None = None) -> di
     for ids, term, first_seen, keys in plan:
         if not all(cid in data for cid in ids):
             continue   # stays due; the next run takes it again
-        per = {k: rose(_series((data[cid].get("tasks") or [{}])[0]), first_seen) for cid, k in zip(ids, keys)}
+        per = {k: rose(settled(_series((data[cid].get("tasks") or [{}])[0]), today), first_seen) for cid, k in zip(ids, keys)}
         v, lead = verdict(per, first_seen)
         store.save_verdict(conn, term, v, lead, per, today)
         checked.append({"term": term, "first_seen": first_seen.isoformat(), "verdict": v, "lead_days": lead})

@@ -432,3 +432,131 @@ def test_mail_recipients_tolerate_how_people_type_them():
     assert notify.recipients('"a@b.com"') == ["a@b.com"]
     assert notify.recipients("a@b.com，c@d.cn") == ["a@b.com", "c@d.cn"]
     assert notify.recipients("<a@b.com>; c@d.cn\n") == ["a@b.com", "c@d.cn"]
+
+
+# --- the generic terms behind the names ---------------------------------------------------------
+
+from radar import usecases  # noqa: E402
+
+TODAY = date(2026, 10, 12)
+
+
+def _daily(values, end=TODAY - timedelta(days=1)):
+    """A daily series ending yesterday, as Trends returns it; its last two days are unsettled."""
+    start = end - timedelta(days=len(values) - 1)
+    return [(start + timedelta(days=i), v) for i, v in enumerate(values)]
+
+
+def test_usecases_reads_new_names_first_then_those_due_again():
+    seen = {"old": {"first": "2026-10-08", "runs": 1}, "done": {"first": "2026-10-01", "runs": 2},
+            "fresh": {"first": "2026-10-11", "runs": 1}}
+    assert usecases.due(["a", "old", "b"], seen, TODAY, 5, 3) == ["a", "b", "old"]
+    assert usecases.due(["a", "b", "c"], seen, TODAY, 2, 3) == ["a", "b"]
+
+
+def test_usecases_parse_drops_the_name_itself_sentences_and_repeats():
+    answer = json.dumps({"use_cases": [
+        {"phrase": "AI Image Detector", "evidence": "check if any image is AI generated", "brand": False},
+        {"phrase": "synthid detector online", "evidence": "x", "brand": True},
+        {"phrase": "detector", "evidence": "x"},
+        {"phrase": "check whether a picture was made by a model today", "evidence": "x"},
+        {"phrase": "ai image detector", "evidence": "again"},
+        {"phrase": "photoshop alternative", "evidence": "free photoshop clone", "brand": True}]})
+    out = usecases.parse("Sure:\n" + answer, "synthid detector")
+    assert [(u["phrase"], u["brand"]) for u in out] == [("ai image detector", False), ("photoshop alternative", True)]
+    assert usecases.parse("no json here", "x") == []
+
+
+def test_trends_last_two_days_are_not_a_rise():
+    # "ai image detector" on 2026-10-12: flat for 88 days, then 0 and 100 on the two unsettled days
+    s = usecases.shape(_daily([5] * 88 + [0, 100]), TODAY)
+    assert s["now"] == "flat" and not s["rose"]
+
+
+def test_a_single_day_spike_on_a_small_term_is_not_a_rise():
+    s = usecases.shape(_daily([0] * 80 + [100] + [0] * 9), TODAY)   # "debloat macos"
+    assert not s["rose"]
+
+
+def test_a_real_rise_is_dated_and_still_rising():
+    # "synthid detector": nothing, then 9, 53, 40 on the last settled days, then the unsettled two
+    s = usecases.shape(_daily([1] * 85 + [9, 53, 40, 59, 100]), TODAY)
+    assert s["rose"] and s["new"] and s["now"] == "rising" and s["started"] == "2026-10-07" and s["peak_day"] == "2026-10-08"
+
+
+def test_a_rise_that_came_back_down_is_fading():
+    s = usecases.shape(_daily([1] * 70 + [60, 100, 70, 30, 10] + [5] * 15), TODAY)
+    assert s["rose"] and s["now"] == "fading"
+
+
+def test_searches_a_day_follow_the_terms_own_volume_along_its_curve():
+    # 30,000 searches in August at level 10; level 20 in the last settled week: twice as many a day
+    points = _daily([10] * 81 + [20] * 9)
+    assert usecases.own_per_day(points, 30000, "2026-08", TODAY) == 2000
+    assert usecases.own_per_day(points, 0, "2026-08", TODAY) is None
+
+
+def test_the_benchmark_is_sized_from_terms_whose_volume_is_known():
+    def row(volume, term_level, bench_level):
+        return {"volume": volume, "month": "2026-08", "_pair": [(d, term_level, bench_level) for d, _ in _daily([0] * 90)]}
+    # a term with 3,000 searches a day at a third of the benchmark's level puts the benchmark at 9,000
+    assert usecases.bench_daily([row(90000, 10, 30), row(900, 1, 50)]) == 9000   # the 900/month term is too small to count
+    assert usecases.bench_daily([row(900, 1, 50)]) is None
+
+
+def test_decisions():
+    up, flat, down = {"now": "rising"}, {"now": "flat"}, {"now": "fading"}
+    assert usecases.decide(up, 5000, 300) == "prioritize" and usecases.decide(up, 40, 300) == "watch"
+    assert usecases.decide(flat, 5000, 300) == "watch" and usecases.decide(flat, 40, 300) == "skip"
+    assert usecases.decide(down, 5000, 300) == "skip" and usecases.decide({"no_data": True}, None, 300) == "watch"
+
+
+def _fake_usecase_network(monkeypatch):
+    rise = _daily([1] * 85 + [9, 53, 40, 59, 100])
+    flat = _daily([20] * 90)
+    monkeypatch.setattr(usecases, "evidence", lambda names, repos, today: (
+        {n: {"posts": [{"text": "check if any image is AI generated", "likes": 900, "by": "a", "url": ""}], "readme": "", "repo": ""} for n in names}, 3000))
+    monkeypatch.setattr(usecases, "propose", lambda model, name, ev: [
+        {"phrase": "ai image detector", "evidence": "check if any image is AI generated", "brand": False},
+        {"phrase": "photoshop alternative", "evidence": "free clone", "brand": True},
+        {"phrase": "nobody searches this", "evidence": "x", "brand": False}])
+    monkeypatch.setattr(usecases, "volumes", lambda phrases, loc: (
+        {"ai image detector": {"volume": 60000, "month": "2026-08"}, "photoshop alternative": {"volume": 6000, "month": "2026-08"},
+         "nobody searches this": {"volume": 0, "month": ""}}, 90000))
+    monkeypatch.setattr(usecases, "fetch_series", lambda keywords, bench, today: (
+        {k: {"solo": rise if k == "synthid detector" else flat,
+             "pair": [(d, v, 40) for d, v in (rise if k == "synthid detector" else flat)]} for k in keywords}, 7200))
+
+
+def test_usecases_run_builds_one_table_and_reads_a_name_twice(cfg, tmp_path, monkeypatch):
+    _fake_usecase_network(monkeypatch)
+    uc = usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY)
+    rows = {r["phrase"]: r for r in uc["rows"]}
+    assert uc["proposed"] == 3 and uc["kept"] == 2 and "nobody searches this" not in rows
+    assert rows["synthid detector"]["kind"] == "name" and rows["synthid detector"]["decision"] == "prioritize"
+    assert rows["ai image detector"]["per_day"] == 2000 and rows["ai image detector"]["decision"] == "watch"
+    assert rows["photoshop alternative"]["brand"] and rows["photoshop alternative"]["decision"] == "skip"
+    assert uc["bench_daily"] == 2200 and uc["cost_micros"] == 100200   # the median of 4,000 and 400
+    assert usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY + timedelta(days=1))["names"] == []
+    assert usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY + timedelta(days=3))["names"] == ["synthid detector"]
+    assert usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY + timedelta(days=9))["names"] == []
+
+
+def test_keyword_table_marks_brands_and_generic_terms_become_leads(cfg, tmp_path, monkeypatch):
+    _fake_usecase_network(monkeypatch)
+    uc = usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY)
+    text = "\n".join(report.keyword_table(cfg, uc))
+    assert "| **synthid detector** | name |" in text and "**prioritize**" in text
+    assert "| **photoshop alternative** ⚠ | generic | synthid detector |" in text and "someone's brand" in text
+    assert "“check if any image is AI generated”" in text
+    leads = report.usecase_leads(uc)
+    assert [x["term"] for x in leads] == ["ai image detector", "photoshop alternative"] and leads[0]["kinds"] == ["usecase"]
+
+
+def test_review_ignores_the_unsettled_days(cfg, tmp_path, monkeypatch):
+    conn = store.connect(tmp_path)
+    store.record(conn, [_lead("ai image detector", ["usecase"])], date(2026, 9, 28))
+    points = [{"date_from": d.isoformat(), "values": [v]} for d, v in _daily([5] * 43 + [0, 100])]
+    answer = {"tasks": [{"result": [{"items": [{"data": points}]}]}]}
+    monkeypatch.setattr(review.aisa, "call_all", lambda calls: ({c["call_id"]: answer for c in calls}, 1200))
+    assert review.review(cfg, conn, TODAY)["checked"][0]["verdict"] == "miss"

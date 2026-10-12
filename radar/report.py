@@ -10,7 +10,7 @@ SHOWN = 20
 OTHER_TERMS = 15
 POSTS_SHOWN = 3   # posts quoted in full per term
 # signal key -> label key, in the order of how early the signal comes
-KINDS = ["x", "hf", "breakout", "sitemap", "newsite", "watch"]
+KINDS = ["x", "hf", "breakout", "sitemap", "newsite", "usecase", "watch"]
 
 
 def leads(cfg: dict, blocks: dict[str, dict]) -> tuple[list[dict], dict]:
@@ -25,6 +25,8 @@ def leads(cfg: dict, blocks: dict[str, dict]) -> tuple[list[dict], dict]:
             row["examples"] += r.get("examples", [])
             row["posts"] += r.get("posts", [])
             row["variants"] += [v for v in r.get("variants", []) if v not in row["variants"]]
+            if r.get("repo"):
+                row["repo"] = r["repo"]
     rows = list(out.values())
     for r in rows:
         r["known"] = config.known(cfg, r["term"])
@@ -158,7 +160,7 @@ def _status_lines(b: dict[str, dict], extra: dict[str, dict]) -> list[str]:
 
 
 def daily(cfg: dict, lead: list[dict], b: dict[str, dict], gsc: dict, rev: dict, summ: dict, extra: dict[str, dict]) -> str:
-    lines = [t("title"), "", t("leads_h"), "", t("leads_cols"), "|---|---|---|---|---|---|"]
+    lines = [t("title"), *keyword_table(cfg, extra.get("usecases", {"skipped": True})), "", t("leads_h"), "", t("leads_cols"), "|---|---|---|---|---|---|"]
     names_ = named(cfg, lead)
     for r in names_[:SHOWN]:
         ex = _cell(" / ".join(e[:50] for e in r["examples"][:2]))
@@ -179,8 +181,49 @@ def daily(cfg: dict, lead: list[dict], b: dict[str, dict], gsc: dict, rev: dict,
     lines += _gsc_lines(gsc)
     lines += _review_lines(cfg, rev, summ)
     lines += _status_lines(b, extra)
-    lines.append(t("cost", cost=_cost(b["x"], rev, b.get("newsite", {}))))
+    lines.append(t("cost", cost=_cost(b["x"], rev, b.get("newsite", {}), extra.get("usecases", {}))))
     return "\n".join(lines) + "\n"
+
+
+def keyword_table(cfg: dict, uc: dict) -> list[str]:
+    """One table for the day: the names read and the generic terms behind them, each with a decision."""
+    if uc.get("skipped"):
+        return []
+    lines = ["", t("uc_h"), ""]
+    if uc.get("error"):
+        return lines + [uc["error"]]
+    if not uc.get("names"):
+        return lines + [t("uc_none")]
+    c = cfg["usecases"]
+    lines += [t("uc_intro", names=", ".join(uc["names"]), proposed=uc["proposed"], kept=uc["kept"], min=c["min_volume"],
+                month=uc["volume_month"] or "?"),
+              t("uc_bench", bench=uc["benchmark"], bench_daily=uc["bench_daily"]) if uc.get("bench_daily") else t("uc_bench_none", bench=uc["benchmark"]), "",
+              t("uc_cols", bench=uc["benchmark"]), "|---|---|---|---|---|---|---|---|---|---|"]
+    for r in uc["rows"]:
+        generic = r["kind"] == "generic"
+        none = r.get("no_data")
+        peak = f"{r['peak_vs']} vs {r['bench_level']}" if "peak_vs" in r else t("dash")
+        lines.append(
+            f"| **{r['phrase']}**{' ⚠' if generic and r['brand'] else ''} | {t('uc_type_generic' if generic else 'uc_type_name')} | "
+            f"{', '.join(r['names']) or t('dash')} | {t('dash') if none else t('uc_yes' if r['new'] else 'uc_no')} | "
+            f"{r['per_day'] if 'per_day' in r else t('dash')} | {r.get('started') or t('dash')} | {peak} | "
+            f"{t('dash') if none else r['peak_day']} | {t('uc_now_none') if none else t('uc_now_' + r['now'])} | {t('uc_' + r['decision'])} |")
+    lines += ["", t("uc_rules", min_daily=c["min_daily"])]
+    if any(r["kind"] == "generic" and r["brand"] for r in uc["rows"]):
+        lines.append(t("uc_brand_note"))
+    said = [f"- **{r['phrase']}** ({', '.join(r['names'])}): “{_cell(r['evidence'])}”" for r in uc["rows"] if r["kind"] == "generic" and r["evidence"]]
+    if said:
+        lines += ["", t("uc_said_h"), *said]
+    if uc.get("no_evidence"):
+        lines += ["", t("uc_no_evidence", names=", ".join(uc["no_evidence"]))]
+    return lines
+
+
+def usecase_leads(uc: dict) -> list[dict]:
+    """The generic terms as leads, for the 14-day review."""
+    return [{"term": r["phrase"], "kinds": ["usecase"], "variants": [r["phrase"]],
+             "signals": [t("note_usecase", names=", ".join(r["names"]), volume=r.get("volume", 0))]}
+            for r in uc.get("rows", []) if r["kind"] == "generic"]
 
 
 def _clip(text: str, n: int) -> str:

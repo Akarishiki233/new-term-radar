@@ -564,10 +564,10 @@ def test_review_ignores_the_unsettled_days(cfg, tmp_path, monkeypatch):
 
 
 def test_screen_drops_loosely_related_keywords_and_keeps_all_when_the_call_fails(monkeypatch):
-    cands = [{"phrase": "ai image detector"}, {"phrase": "chatgpt alternative"}, {"phrase": "ai audio detector"}]
+    cands = [{"phrase": p, "brand": False} for p in ("ai image detector", "chatgpt alternative", "ai audio detector")]
     ev = {"posts": [{"text": "check if any image is AI generated", "likes": 900, "by": "a"}], "readme": ""}
     monkeypatch.setattr(usecases.aisa, "chat", lambda *a, **k: '[{"i": 0, "score": 0.95}, {"i": 1, "score": 0.2}, {"i": 2, "score": 0.7}]')
-    kept = usecases.screen("m", "synthid detector", ev, cands)
+    kept = usecases.relevant(usecases.screen("m", "synthid detector", ev, cands))
     assert [(c["phrase"], c["relevance"]) for c in kept] == [("ai image detector", 0.95), ("ai audio detector", 0.7)]
 
     def down(*a, **k):
@@ -579,3 +579,63 @@ def test_screen_drops_loosely_related_keywords_and_keeps_all_when_the_call_fails
 def test_momentum_is_the_last_settled_week_against_the_week_before():
     assert usecases.shape(_daily([10] * 76 + [20] * 7 + [40] * 7 + [0, 100]), TODAY)["momentum"] == 2.0
     assert usecases.shape(_daily([0] * 83 + [40] * 7 + [0, 100]), TODAY)["momentum"] is None   # nothing the week before
+
+
+# --- the optional second source: what people searched together with a name ----------------------
+
+def test_related_queries_split_into_long_tails_and_candidates():
+    related = {"rising": ["ai photo detector", "google synthid detector", "openai", "gpt image 2.5"],
+               "top": ["ai detector", "synthid detector", "synthid detector online", "ai photo detector"]}
+    tails, cands = usecases.split_related("synthid detector", related)
+    assert tails == ["google synthid detector", "synthid detector online"]
+    assert [c["phrase"] for c in cands] == ["ai photo detector", "gpt image 2.5", "ai detector"]   # "openai" is one word
+    assert cands[0]["source"] == "searched" and "rising" in cands[0]["evidence"]
+
+
+def test_screen_marks_brands_and_other_names(monkeypatch):
+    cands = [{"phrase": "free up mac disk space", "brand": False, "source": "model"},
+             {"phrase": "gpt image 2.5", "brand": False, "source": "searched"}]
+    monkeypatch.setattr(usecases.aisa, "chat", lambda *a, **k:
+                        '[{"i": 0, "score": 0.8, "brand": true, "name": false}, {"i": 1, "score": 0.1, "brand": true, "name": true}]')
+    viewed = usecases.screen("m", "removemacai", {"posts": [], "readme": "frees 12 GB"}, cands)
+    assert viewed[0]["brand"] and viewed[1]["is_name"]
+    assert [c["phrase"] for c in usecases.relevant(viewed)] == ["free up mac disk space"]
+
+
+def test_with_a_key_related_queries_join_the_table_and_other_names_become_leads(cfg, tmp_path, monkeypatch):
+    _fake_usecase_network(monkeypatch)
+    monkeypatch.setenv("GOANYAPI_API_KEY", "k")
+    monkeypatch.setattr(usecases.goanyapi, "related_queries", lambda name, geo: (
+        {"rising": ["ai photo detector", "gpt image 2.5", "synthid detector online"], "top": []}, 6000))
+    monkeypatch.setattr(usecases, "screen", lambda model, name, ev, cands: [
+        dict(c, relevance=0.9, is_name=c["phrase"] == "gpt image 2.5") for c in cands])
+    monkeypatch.setattr(usecases, "volumes", lambda phrases, loc: (
+        {p: {"volume": 9000, "month": "2026-08"} for p in phrases if p != "nobody searches this"}, 90000))
+    uc = usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY)
+    rows = {r["phrase"]: r for r in uc["rows"]}
+    assert rows["ai photo detector"]["source"] == "searched" and "gpt image 2.5" not in rows
+    assert uc["cosearch"] == [{"term": "gpt image 2.5", "with": "synthid detector"}]
+    assert uc["tails"] == {"synthid detector": ["synthid detector online"]} and uc["cost_micros"] == 106200
+    text = "\n".join(report.keyword_table(cfg, uc))
+    assert "| **ai photo detector** 🔎 |" in text and "gpt image 2.5 (with synthid detector)" in text and "synthid detector online" in text
+    assert {"term": "gpt image 2.5", "kinds": ["cosearch"]}.items() <= report.usecase_leads(uc)[-1].items()
+
+
+def test_without_a_key_the_table_says_the_source_is_off_and_a_failure_is_reported(cfg, tmp_path, monkeypatch):
+    _fake_usecase_network(monkeypatch)
+    uc = usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY)
+    assert not uc["related"] and "GOANYAPI_API_KEY" in "\n".join(report.keyword_table(cfg, uc))
+    monkeypatch.setenv("GOANYAPI_API_KEY", "k")
+
+    def down(name, geo):
+        raise usecases.goanyapi.GoAnyError("HTTP 502")
+    monkeypatch.setattr(usecases.goanyapi, "related_queries", down)
+    uc = usecases.run(cfg, tmp_path / "b", ["synthid detector"], {}, TODAY)
+    assert uc["related_errors"] == ["synthid detector: HTTP 502"] and uc["kept"] == 2
+    assert "HTTP 502" in "\n".join(report.keyword_table(cfg, uc))
+
+
+def test_other_names_must_be_rising_and_not_the_same_family():
+    viewed = [{"phrase": p, "is_name": True, "rising": r} for p, r in (
+        ("gpt image 2.5", True), ("google nano banana", True), ("nano banana pro", True), ("google gemini", False), ("mistral large 4", True))]
+    assert [x["term"] for x in usecases.other_names("nano banana 2.1", viewed)] == ["gpt image 2.5", "mistral large 4"]

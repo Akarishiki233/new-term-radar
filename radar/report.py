@@ -10,7 +10,7 @@ SHOWN = 20
 OTHER_TERMS = 15
 POSTS_SHOWN = 3   # posts quoted in full per term
 # signal key -> label key, in the order of how early the signal comes
-KINDS = ["x", "hf", "breakout", "sitemap", "newsite", "usecase", "watch"]
+KINDS = ["x", "hf", "breakout", "sitemap", "newsite", "usecase", "cosearch", "watch"]
 
 
 def leads(cfg: dict, blocks: dict[str, dict]) -> tuple[list[dict], dict]:
@@ -204,7 +204,8 @@ def keyword_table(cfg: dict, uc: dict) -> list[str]:
         none = r.get("no_data")
         peak = f"{r['peak_vs']} vs {r['bench_level']}" if "peak_vs" in r else t("dash")
         lines.append(
-            f"| **{r['phrase']}**{' ⚠' if generic and r['brand'] else ''} | {t('uc_type_generic' if generic else 'uc_type_name')} | "
+            f"| **{r['phrase']}**{' 🔎' if r.get('source') == 'searched' else ''}{' ⚠' if generic and r['brand'] else ''} | "
+            f"{t('uc_type_generic' if generic else 'uc_type_name')} | "
             f"{', '.join(r['names']) or t('dash')} | {t('dash') if none else t('uc_yes' if r['new'] else 'uc_no')} | "
             f"{r['per_day'] if 'per_day' in r else t('dash')} | {r.get('started') or t('dash')} | {peak} | "
             f"{t('dash') if none else r['peak_day']} | {'×' + str(r['momentum']) if r.get('momentum') is not None else t('dash')} | "
@@ -212,11 +213,22 @@ def keyword_table(cfg: dict, uc: dict) -> list[str]:
     lines += ["", t("uc_rules", min_daily=c["min_daily"])]
     if any(r["kind"] == "generic" and r["brand"] for r in uc["rows"]):
         lines.append(t("uc_brand_note"))
-    said = [f"- **{r['phrase']}** ({', '.join(r['names'])}): “{_cell(r['evidence'])}”" for r in uc["rows"] if r["kind"] == "generic" and r["evidence"]]
+    if any(r.get("source") == "searched" for r in uc["rows"]):
+        lines.append(t("uc_searched_note"))
+    said = [f"- **{r['phrase']}** ({', '.join(r['names'])}): “{_cell(r['evidence'])}”" for r in uc["rows"]
+            if r["kind"] == "generic" and r["evidence"] and r.get("source") != "searched"]
     if said:
         lines += ["", t("uc_said_h"), *said]
+    if uc.get("tails"):
+        lines += ["", t("uc_tails_h"), *[f"- **{n}**: {', '.join(v[:10])}" for n, v in uc["tails"].items()]]
+    if uc.get("cosearch"):
+        lines += ["", t("uc_cosearch_h") + " " + ", ".join(t("uc_cosearch_item", term=x["term"], name=x["with"]) for x in uc["cosearch"])]
     if uc.get("no_evidence"):
         lines += ["", t("uc_no_evidence", names=", ".join(uc["no_evidence"]))]
+    if uc.get("related_errors"):
+        lines += ["", t("uc_related_err", names="; ".join(uc["related_errors"]))]
+    elif not uc.get("related"):
+        lines += ["", t("uc_related_off")]
     return lines
 
 
@@ -224,7 +236,9 @@ def usecase_leads(uc: dict) -> list[dict]:
     """The generic terms as leads, for the 14-day review."""
     return [{"term": r["phrase"], "kinds": ["usecase"], "variants": [r["phrase"]],
              "signals": [t("note_usecase", names=", ".join(r["names"]), volume=r.get("volume", 0))]}
-            for r in uc.get("rows", []) if r["kind"] == "generic"]
+            for r in uc.get("rows", []) if r["kind"] == "generic"] + \
+        [{"term": x["term"], "kinds": ["cosearch"], "variants": [x["term"]], "signals": [t("note_cosearch", name=x["with"])]}
+         for x in uc.get("cosearch", [])]
 
 
 def _clip(text: str, n: int) -> str:

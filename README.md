@@ -70,7 +70,8 @@ How it is made (`radar/usecases.py`):
 
 1. **Evidence**: the most-liked posts that mention the name (X advanced search) and, for a repository, its README.
 2. **Phrases**: a model reads the evidence and writes the keyword an ordinary person would type for each job it sees people doing, with a quote that backs it. A phrase built on another product's name ("photoshop alternative") is kept and marked ⚠: demand often hangs on the incumbent, and whether to use someone's brand is your call.
-3. **Screen**: a second call scores how well the name answers each phrase; the loosely related ones are dropped. For Claude Haiku 5.5 it dropped all six proposed ("ai coding assistant", "github copilot alternative"); for SynthID Detector it kept all five.
+   With a GoAnyAPI key (optional, below) the radar also takes **Google Trends' related queries** for the name: what people really searched together with it. For SynthID Detector that gave "ai photo detector", "google ai detector" and "ai detector"; these rows carry 🔎. Queries that hold the name are listed as its long-tails ("photocraft download", "nano banana 2.1 vs pro"). Queries that are themselves the names of other rising things ("gpt image 2.5" beside "nano banana 2.1") are kept as leads of their own.
+3. **Screen**: a second call scores how well the name answers each phrase, marks brands, and spots the names of other things; the loosely related ones are dropped. For Claude Haiku 5.5 it dropped all six proposed ("ai coding assistant", "github copilot alternative"); for SynthID Detector it kept all five.
 4. **Volume**: Google Ads monthly searches for the rest, one batch call. Phrases under `min_volume` are dropped; most are.
 5. **Trends**, twice per row: the term alone gives the shape (new or not, the day it started rising, the peak, the last week against the week before, what it is doing now); the term beside a benchmark keyword (`gpts` by default) gives the size.
 
@@ -82,21 +83,23 @@ Each name is read twice, the day it appears and three days later, because on ann
 
 What to expect from it, from the first eight names we ran it on:
 
-- **The names rose; the generic terms did not, within five days.** PhotoCraft, Claude Haiku 5.5 and SynthID Detector all climbed clearly. None of the generic terms behind them moved in that time. A release sends people searching for its name first; whether the generic term follows later is what the 14-day review will show, and we have no result yet.
-- So the table's use today is to tell you **which existing demand a new thing serves and how big it is** ("ai image detector", about 2,500 searches a day), not to catch a generic term taking off.
+- **The names rose; most generic terms did not, within five days.** PhotoCraft, Claude Haiku 5.5 and SynthID Detector all climbed clearly. Of the generic terms behind them, one moved: "photoshop alternative" ran about 80% above its level in the US for five days after PhotoCraft appeared. The worldwide daily series the table reads showed almost nothing of it (2, 1, 1, 2, 4, 2); a US daily series from another source showed it plainly. So a flat reading here does not prove a term did not move.
+- The table's dependable use today is to tell you **which existing demand a new thing serves and how big it is** ("ai image detector", about 2,500 searches a day). Whether generic terms follow the names is what the 14-day review will show, and we have no result yet.
 - For pure model releases (Claude Haiku 5.5, Nano Banana 2.1) the evidence was announcements and benchmarks, and the phrases proposed were weak ("ai coding assistant"). It works better for products and repositories that do one job.
 - **Google Trends' last two days are not settled.** For unrelated terms they came back as 0 and then 100, which reads as a spike. Our first pass was fooled by exactly this; every reader in the code now drops those two days, and a rise must last two days to count.
 - Google Ads volumes run about two months behind. Trends reads nothing reliable for terms under a few hundred searches a month.
 
 Set `"usecases": {"per_day": 0}` or pass `--skip usecases` to turn it off.
 
-## One key
+## One key, and an optional second
 
-Everything paid goes through [AIsa](https://go.aisa.one/yansen-zhu): X posts, Google Trends and domain data (DataForSEO behind it) and the model that judges names. One key, pay per call, no subscriptions to X's API or DataForSEO.
+Everything the radar needs goes through [AIsa](https://go.aisa.one/yansen-zhu): X posts, Google Trends and domain data (DataForSEO behind it) and the models that judge names and propose phrases. One key, pay per call, no subscriptions to X's API or DataForSEO.
 
 > That link is a referral link: signing up through it supports this project. The radar works the same with a key from anywhere on aisa.one.
 
-Without a key the free signals still run (Hugging Face, GitHub, sitemaps, Search Console); the report then lists every term unsorted, because nothing judges which are names.
+**Optional: `GOANYAPI_API_KEY`** ([goanyapi.com](https://goanyapi.com)) adds Google Trends' related queries to the keyword table, about $0.006 per name. Without it the table is built from the model's phrases alone. The service is young (first released in August 2026); in our tests calls took 20 to 55 seconds and about one in ten failed, so the radar tries twice, reports a failure in the table and carries on.
+
+Without an AIsa key the free signals still run (Hugging Face, GitHub, sitemaps, Search Console); the report then lists every term unsorted, because nothing judges which are names.
 
 ## Quick start
 
@@ -165,7 +168,7 @@ and from `sources`:
 | `breakout` | `window_days`, `min_stars`, `velocity_min` (stars a day), `delta_min` (stars since yesterday) |
 | `new_sites` | `queries`: a name and a SQL LIKE pattern on the domain (`"%ai%"`), one paid query each; `weekday` (0 = Monday) |
 | `review` | `after_days` (14) and `per_day` (5 leads a day) |
-| `usecases` | The keyword table. `per_day` (names read a day, 0 = off), `model`, `benchmark` (the keyword sizes are compared with), `min_volume` (monthly searches a phrase needs), `min_daily` (searches a day for "prioritize"), `recheck_days` (3) |
+| `usecases` | The keyword table. `per_day` (names read a day, 0 = off), `model`, `benchmark` (the keyword sizes are compared with), `min_volume` (monthly searches a phrase needs), `min_daily` (searches a day for "prioritize"), `recheck_days` (3), `related` (use related queries when `GOANYAPI_API_KEY` is set) and `related_geo` (`US`) |
 | `gsc` | `site` (`sc-domain:example.com`) and `token_file`. Leave `{}` to turn the signal off |
 
 Please read each site's robots.txt before you add its sitemap, and keep `pause` at or above its crawl-delay. The example config makes a few dozen requests a day in total, spaced by `pause`.
@@ -189,7 +192,7 @@ python scripts/gsc_auth.py gsc_client.json   # opens a browser once, writes gsc_
 
 1. Fork the repository (a private fork is fine).
 2. Remove `config.json` from `.gitignore` and commit your config. It holds no secrets.
-3. Add the secret `AISA_API_KEY`; optionally `RESEND_API_KEY`, `EMAIL_FROM`, `RADAR_EMAIL_TO`, `GSC_TOKEN_JSON`.
+3. Add the secret `AISA_API_KEY`; optionally `GOANYAPI_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `RADAR_EMAIL_TO`, `GSC_TOKEN_JSON`.
 4. Set the repository variable `RADAR_ENABLED` to `true`.
 
 ## How the pieces decide

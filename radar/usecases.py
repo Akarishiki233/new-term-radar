@@ -10,6 +10,11 @@ For the day's new names this step:
      ordinary person would type for each job. A phrase built on another product's name
      ("photoshop alternative") is kept and marked `brand`: demand often hangs on the
      incumbent, and that is yours to weigh;
+  2b. with a GoAnyAPI key (optional), also takes Google Trends' related queries for the
+     name: what people really searched together with it. Queries that hold the name are
+     its long-tails ("photocraft download"); the others join the phrases; those that are
+     themselves names of other new things ("gpt image 2.5" beside "nano banana 2.1") are
+     handed back as leads of kind "cosearch";
   3. screens them: a second call scores how well the name answers each phrase, and the
      loosely related ones are dropped (a keyword taken from a passing comparison);
   4. looks the rest up: Google Ads monthly searches (one batch call);
@@ -44,7 +49,7 @@ import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import UA, aisa, review, snap
+from . import UA, aisa, goanyapi, review, snap
 
 POSTS_KEPT = 12
 POST_CHARS = 400
@@ -149,36 +154,85 @@ def propose(model: str, name: str, ev: dict) -> list[dict]:
 
 SCREEN = (
     "You check keyword candidates for an SEO researcher. NAME is a new model, product or repository; EVIDENCE is what "
-    "people posted about it. For each candidate keyword, score from 0.0 to 1.0 how well NAME answers that search: would "
-    "someone who typed the keyword be served by a page about using NAME for it?\n"
-    "High: the keyword names the main job NAME does, as the evidence shows it ('ai image detector' for a tool that "
-    "tells whether an image is AI-made; 'photoshop alternative' for a free clone of that editor).\n"
-    "Low: a side mention, a comparison someone made in passing ('chatgpt alternative' because one post compared two "
-    "models), a broad category NAME is only one of thousands in ('ai coding assistant' for a general language model), "
-    "or a job the evidence does not show.\n"
-    "Answer with JSON only, one object per candidate, in the same order: [{\"i\": 0, \"score\": 0.9}, ...]"
+    "people posted about it. For each candidate keyword give three things.\n"
+    "`score`, 0.0 to 1.0: how well NAME answers that search. Would someone who typed the keyword be served by a page "
+    "about using NAME for it? High: the keyword names the main job NAME does, as the evidence shows it ('ai image "
+    "detector' for a tool that tells whether an image is AI-made; 'photoshop alternative' for a free clone of that "
+    "editor). Low: a side mention, a comparison someone made in passing ('chatgpt alternative' because one post "
+    "compared two models), a broad category NAME is only one of thousands in ('ai coding assistant' for a general "
+    "language model), or a job the evidence does not show.\n"
+    "`brand`, true or false: the keyword contains a brand, product, company, operating system, person, studio, "
+    "franchise or character name ('photoshop alternative', 'free up mac disk space').\n"
+    "`name`, true or false: the keyword is itself the name of another specific product, model or tool, with or "
+    "without its maker ('gpt image 2.5', 'gemini 4 argon', 'mistral large 4'), not a task or a kind of tool.\n"
+    "Answer with JSON only, one object per candidate, in the same order: "
+    "[{\"i\": 0, \"score\": 0.9, \"brand\": false, \"name\": false}, ...]"
 )
 RELEVANT_MIN = 0.6
+RELATED_KEPT = 12          # related queries per name that go to the screen
+COSEARCH_KEPT = 5          # other names kept as leads per name
+
+
+def split_related(name: str, related: dict[str, list[str]]) -> tuple[list[str], list[dict]]:
+    """Related queries sorted into the name's own long-tails ("photocraft download") and
+    candidate phrases. One-word queries ("github", "google") say nothing and are dropped."""
+    words = name.split()
+    tails, cands, seen = [], [], set()
+    for kind in ("rising", "top"):
+        for q in related.get(kind, []):
+            if q in seen or q == name:
+                continue
+            seen.add(q)
+            if all(w in q.split() for w in words) or name in q:
+                tails.append(q)
+            elif len(q.split()) >= 2:
+                cands.append({"phrase": q, "brand": False, "source": "searched", "rising": kind == "rising",
+                              "evidence": f"searched on Google together with {name} ({kind})"})
+    return tails, cands[:RELATED_KEPT]
 
 
 def screen(model: str, name: str, ev: dict, cands: list[dict]) -> list[dict]:
-    """The candidates that really are about this name, each with its `relevance`. A failed
-    call keeps them all, unscored: the screen narrows the table, it never empties it."""
+    """The candidates with the model's view of each: `relevance`, `brand` (added to what
+    the proposer said), `is_name`. A failed call returns them as they came, unscored: the
+    screen narrows the table, it never empties it."""
     if not cands:
         return []
     posts = "\n".join(f"- ({p['likes']} likes) @{p['by']}: {p['text'][:POST_CHARS]}" for p in ev["posts"][:6])
     user = f"NAME: {name}\n\nEVIDENCE:\n{posts or ev['readme'][:1200]}\n\nCANDIDATES:\n" + json.dumps(
         [{"i": i, "keyword": c["phrase"]} for i, c in enumerate(cands)], ensure_ascii=False)
     try:
-        answer = aisa.chat(model, SCREEN, user, max_tokens=400)
+        answer = aisa.chat(model, SCREEN, user, max_tokens=600)
     except aisa.AisaError:
         return cands
     m = re.search(r"\[.*\]", answer, re.S)
     try:
-        scores = {int(x["i"]): float(x["score"]) for x in json.loads(m.group(0))} if m else {}
+        views = {int(x["i"]): x for x in json.loads(m.group(0))} if m else {}
     except (ValueError, KeyError, TypeError):
         return cands
-    return [dict(c, relevance=scores[i]) for i, c in enumerate(cands) if scores.get(i, 1.0) >= RELEVANT_MIN]
+    out = []
+    for i, c in enumerate(cands):
+        v = views.get(i)
+        try:
+            out.append(dict(c, relevance=float(v["score"]), brand=c["brand"] or bool(v.get("brand")), is_name=bool(v.get("name")))
+                       if v else c)
+        except (KeyError, TypeError, ValueError):
+            out.append(c)
+    return out
+
+
+def other_names(name: str, viewed: list[dict]) -> list[dict]:
+    """Names of other things that are rising in searches beside this one: leads of their
+    own. A query sharing a word of the name is the same family ("google nano banana",
+    "nano banana pro" beside "nano banana 2.1"), not another thing."""
+    family = {w for w in name.split() if w.isalpha() and len(w) > 2}
+    out = [{"term": u["phrase"], "with": name} for u in viewed
+           if u.get("is_name") and u.get("rising") and not family & set(u["phrase"].split())]
+    return out[:COSEARCH_KEPT]
+
+
+def relevant(cands: list[dict]) -> list[dict]:
+    """Candidates that pass the screen: not another thing's name, and related enough."""
+    return [c for c in cands if not c.get("is_name") and c.get("relevance", 1.0) >= RELEVANT_MIN]
 
 
 def volumes(phrases: list[str], location_code: int) -> tuple[dict[str, dict], int]:
@@ -345,14 +399,32 @@ def run(cfg: dict, state: Path, names: list[str], repos: dict[str, str], today: 
         return {"names": [], "rows": [], "proposed": 0, "cost_micros": 0}
     ev, cost = evidence(todo, repos, today)
     proposed: dict[str, dict] = {}
-    asked = 0
+    asked, c0 = 0, 0
+    tails: dict[str, list[str]] = {}
+    cosearch: list[dict] = []
+    related_errors: list[str] = []
+    use_related = bool(goanyapi.key()) and c.get("related", True)
     for name in todo:
-        cands = propose(c["model"], name, ev[name])
+        cands = [dict(u, source="model") for u in propose(c["model"], name, ev[name])]
+        if use_related:
+            try:
+                related, cost_r = goanyapi.related_queries(name, c["related_geo"])
+            except goanyapi.GoAnyError as exc:
+                related, cost_r = {}, 0
+                related_errors.append(f"{name}: {exc}")
+            c0 += cost_r
+            tails[name], searched = split_related(name, related)
+            have = {u["phrase"] for u in cands}
+            cands += [u for u in searched if u["phrase"] not in have]
         asked += len(cands)
-        for u in screen(c["model"], name, ev[name], cands):
+        viewed = screen(c["model"], name, ev[name], cands)
+        cosearch += other_names(name, viewed)
+        for u in relevant(viewed):
             row = proposed.setdefault(u["phrase"], {**u, "term": u["phrase"], "kind": "generic", "names": []})
             row["names"].append(name)
             row["brand"] |= u["brand"]
+            if u["source"] == "searched":
+                row["source"] = "searched"
     bench = c["benchmark"].lower()
     vol, c2 = volumes(sorted(proposed), c["location_code"])
     generic = sorted((dict(r, **vol[p]) for p, r in proposed.items() if vol.get(p, {}).get("volume", 0) >= c["min_volume"]),
@@ -370,4 +442,5 @@ def run(cfg: dict, state: Path, names: list[str], repos: dict[str, str], today: 
     return {"names": todo, "rows": rows, "proposed": asked, "relevant": len(proposed), "kept": len(generic), "benchmark": bench,
             "bench_daily": round(daily) if daily else None, "volume_month": next((r["month"] for r in generic if r.get("month")), ""),
             "no_evidence": [n for n in todo if not ev[n]["posts"] and not ev[n]["readme"]],
-            "cost_micros": cost + c2 + c3}
+            "related": use_related, "tails": {n: v for n, v in tails.items() if v}, "cosearch": cosearch,
+            "related_errors": related_errors, "cost_micros": cost + c0 + c2 + c3}

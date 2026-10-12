@@ -611,6 +611,7 @@ def test_with_a_key_related_queries_join_the_table_and_other_names_become_leads(
         dict(c, relevance=0.9, is_name=c["phrase"] == "gpt image 2.5") for c in cands])
     monkeypatch.setattr(usecases, "volumes", lambda phrases, loc: (
         {p: {"volume": 9000, "month": "2026-08"} for p in phrases if p != "nobody searches this"}, 90000))
+    cfg["usecases"]["country_trends"] = False
     uc = usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY)
     rows = {r["phrase"]: r for r in uc["rows"]}
     assert rows["ai photo detector"]["source"] == "searched" and "gpt image 2.5" not in rows
@@ -630,6 +631,7 @@ def test_without_a_key_the_table_says_the_source_is_off_and_a_failure_is_reporte
     def down(name, geo):
         raise usecases.goanyapi.GoAnyError("HTTP 502")
     monkeypatch.setattr(usecases.goanyapi, "related_queries", down)
+    cfg["usecases"]["country_trends"] = False
     uc = usecases.run(cfg, tmp_path / "b", ["synthid detector"], {}, TODAY)
     assert uc["related_errors"] == ["synthid detector: HTTP 502"] and uc["kept"] == 2
     assert "HTTP 502" in "\n".join(report.keyword_table(cfg, uc))
@@ -639,3 +641,64 @@ def test_other_names_must_be_rising_and_not_the_same_family():
     viewed = [{"phrase": p, "is_name": True, "rising": r} for p, r in (
         ("gpt image 2.5", True), ("google nano banana", True), ("nano banana pro", True), ("google gemini", False), ("mistral large 4", True))]
     assert [x["term"] for x in usecases.other_names("nano banana 2.1", viewed)] == ["gpt image 2.5", "mistral large 4"]
+
+
+# --- one country's settled series for the rows that matter -------------------------------------
+
+def _month(values):
+    """A 30-day series ending today, as goanyapi.daily_series returns it."""
+    return [(TODAY - timedelta(days=len(values) - 1 - i), v) for i, v in enumerate(values)]
+
+
+def test_an_established_term_80_percent_up_for_five_days_is_a_rise_in_the_country_series():
+    # "photoshop alternative" in the US around PhotoCraft: about 50, then 77, 86, 83, 100, 94, and 79 on the partial day
+    points = _month([52, 48, 50, 47, 55, 51, 49, 53, 50, 46, 52, 50, 48, 54, 49, 51, 50, 47, 53, 46, 47, 53, 57, 55, 77, 86, 83, 100, 94, 79])
+    s = usecases.shape(points, TODAY, usecases.COUNTRY)
+    assert s["rose"] and not s["new"] and s["now"] == "rising" and s["started"] == "2026-10-07" and s["momentum"] >= 1.4
+
+
+def test_a_flat_country_series_stays_flat():
+    assert usecases.shape(_month([30, 34, 28, 31] * 7 + [33, 29]), TODAY, usecases.COUNTRY)["now"] == "flat"
+
+
+def test_names_and_big_generic_terms_take_their_shape_from_the_country(cfg, tmp_path, monkeypatch):
+    _fake_usecase_network(monkeypatch)
+    monkeypatch.setenv("GOANYAPI_API_KEY", "k")
+    cfg["usecases"]["related"] = False
+    up = _month([50] * 24 + [77, 86, 83, 100, 94, 79])
+    asked = []
+
+    def daily_series(term, geo):
+        asked.append(term)
+        if term == "synthid detector":
+            raise usecases.goanyapi.GoAnyError("HTTP 502")
+        return up, 6000
+    monkeypatch.setattr(usecases.goanyapi, "daily_series", daily_series)
+    uc = usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY)
+    rows = {r["phrase"]: r for r in uc["rows"]}
+    assert asked == ["synthid detector", "ai image detector", "photoshop alternative"]     # the name first, then by volume
+    assert rows["ai image detector"]["trend_geo"] and rows["ai image detector"]["now"] == "rising"
+    assert rows["ai image detector"]["decision"] == "prioritize"      # flat worldwide, up in the US
+    assert "trend_geo" not in rows["synthid detector"] and uc["country_errors"] == ["synthid detector: HTTP 502"]
+    text = "\n".join(report.keyword_table(cfg, uc))
+    assert "still rising (US)" in text and "worldwide data used instead: synthid detector" in text
+
+
+def test_small_generic_terms_are_not_worth_a_country_lookup(cfg):
+    rows = [{"phrase": "a", "kind": "generic", "volume": 300}, {"phrase": "b", "kind": "generic", "volume": 5000}, {"phrase": "n", "kind": "name"}]
+    asked = []
+    import radar.goanyapi as g
+    orig = g.daily_series
+    g.daily_series = lambda term, geo: (asked.append(term) or [], 0)
+    try:
+        usecases.country_series(rows, cfg["usecases"])
+    finally:
+        g.daily_series = orig
+    assert asked == ["n", "b"]
+
+
+def test_started_rising_is_the_run_that_holds_the_peak_not_an_earlier_blip():
+    # a one-day blip on 10-01, then the real rise from 10-07
+    points = _month([20] * 19 + [45] + [20] * 5 + [70, 100, 68, 51, 42])
+    s = usecases.shape(points, TODAY, usecases.COUNTRY)
+    assert s["rose"] and s["started"] == "2026-10-08" and s["peak_day"] == "2026-10-09"

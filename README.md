@@ -47,7 +47,7 @@ flowchart LR
 | ③ New sites | Domains registered and first indexed in the last 90 days that already rank for 20+ keywords | AIsa key | about $0.13 per query, weekly |
 | ④ Search Console | Queries your site got impressions for, for the first time (fresh data) | your own Google token | free |
 | ⑤ Review | Each lead checked in Google Trends 14 days later, against its own baseline; hit rate and days ahead per signal | AIsa key | $0.0012 per search variant |
-| Keyword table | For the day's new names: the generic search terms behind them (what people do with the new thing), each sized and given a decision | AIsa key | about $0.15 a day for 5 names |
+| Keyword table | For the day's new names: the generic search terms behind them (what people do with the new thing), each sized and given a decision | AIsa key; GoAnyAPI key optional | about $0.15 a day for 5 names, $0.22 with GoAnyAPI |
 | Name judge | A small model scores every term: the name of one specific thing, or a common word? | AIsa key | a fraction of a cent per run |
 
 Prices are what AIsa charged in October 2026. With the example config (35 X accounts read three times a day, the keyword table for 5 names a day) a month costs about $15: $10 for the X reads, $5 for the keyword table. Read fewer accounts, or read them once a day, and it drops in proportion.
@@ -83,7 +83,7 @@ Each name is read twice, the day it appears and three days later, because on ann
 
 What to expect from it, from the first eight names we ran it on:
 
-- **The names rose; most generic terms did not, within five days.** PhotoCraft, Claude Haiku 5.5 and SynthID Detector all climbed clearly. Of the generic terms behind them, one moved: "photoshop alternative" ran about 80% above its level in the US for five days after PhotoCraft appeared. The worldwide daily series the table reads showed almost nothing of it (2, 1, 1, 2, 4, 2); a US daily series from another source showed it plainly. So a flat reading here does not prove a term did not move.
+- **The names rose; most generic terms did not, within five days.** PhotoCraft, Claude Haiku 5.5 and SynthID Detector all climbed clearly. Of the generic terms behind them, one moved: "photoshop alternative" ran about 80% above its level in the US for five days after PhotoCraft appeared. The worldwide daily series the table reads showed almost nothing of it (2, 1, 1, 2, 4, 2); a US daily series from another source showed it plainly. So a flat reading from the worldwide series does not prove a term did not move. With a GoAnyAPI key the bigger rows are read from the one-country series instead, where a rise is 1.5 times the earlier level held for three days; the same run then shows "photoshop alternative" as `still rising (US)`.
 - The table's dependable use today is to tell you **which existing demand a new thing serves and how big it is** ("ai image detector", about 2,500 searches a day). Whether generic terms follow the names is what the 14-day review will show, and we have no result yet.
 - For pure model releases (Claude Haiku 5.5, Nano Banana 2.1) the evidence was announcements and benchmarks, and the phrases proposed were weak ("ai coding assistant"). It works better for products and repositories that do one job.
 - **Google Trends' last two days are not settled.** For unrelated terms they came back as 0 and then 100, which reads as a spike. Our first pass was fooled by exactly this; every reader in the code now drops those two days, and a rise must last two days to count.
@@ -97,7 +97,7 @@ Everything the radar needs goes through [AIsa](https://go.aisa.one/yansen-zhu): 
 
 > That link is a referral link: signing up through it supports this project. The radar works the same with a key from anywhere on aisa.one.
 
-**Optional: `GOANYAPI_API_KEY`** ([goanyapi.com](https://goanyapi.com)) adds Google Trends' related queries to the keyword table, about $0.006 per name. Without it the table is built from the model's phrases alone. The service is young (first released in August 2026); in our tests calls took 20 to 55 seconds and about one in ten failed, so the radar tries twice, reports a failure in the table and carries on.
+**Optional: `GOANYAPI_API_KEY`** ([goanyapi.com](https://goanyapi.com)) improves the keyword table in two ways, for about $0.07 a day: it adds Google Trends' related queries for each name, and it reads the curve of the names and the bigger generic terms (1,000 searches a month or more, eight rows at most) from 30 days of daily data for one country, settled to yesterday. Those rows show the country after "Now", as in `still rising (US)`. Without the key the table is built from the model's phrases and the worldwide series alone. The service is young (first released in August 2026); in our tests calls took 20 to 55 seconds and about one in ten failed, so the radar tries twice, reports a failure in the table and carries on.
 
 Without an AIsa key the free signals still run (Hugging Face, GitHub, sitemaps, Search Console); the report then lists every term unsorted, because nothing judges which are names.
 
@@ -168,7 +168,7 @@ and from `sources`:
 | `breakout` | `window_days`, `min_stars`, `velocity_min` (stars a day), `delta_min` (stars since yesterday) |
 | `new_sites` | `queries`: a name and a SQL LIKE pattern on the domain (`"%ai%"`), one paid query each; `weekday` (0 = Monday) |
 | `review` | `after_days` (14) and `per_day` (5 leads a day) |
-| `usecases` | The keyword table. `per_day` (names read a day, 0 = off), `model`, `benchmark` (the keyword sizes are compared with), `min_volume` (monthly searches a phrase needs), `min_daily` (searches a day for "prioritize"), `recheck_days` (3), `related` (use related queries when `GOANYAPI_API_KEY` is set) and `related_geo` (`US`) |
+| `usecases` | The keyword table. `per_day` (names read a day, 0 = off), `model`, `benchmark` (the keyword sizes are compared with), `min_volume` (monthly searches a phrase needs), `min_daily` (searches a day for "prioritize"), `recheck_days` (3), `related` (use related queries when `GOANYAPI_API_KEY` is set), `related_geo` (`US`), `country_trends` (read the bigger rows' curves from that country), `country_min_volume` (1000) and `country_max` (8) |
 | `gsc` | `site` (`sc-domain:example.com`) and `token_file`. Leave `{}` to turn the signal off |
 
 Please read each site's robots.txt before you add its sitemap, and keep `pause` at or above its crawl-delay. The example config makes a few dozen requests a day in total, spaced by `pause`.

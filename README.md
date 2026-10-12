@@ -57,11 +57,11 @@ Prices are what AIsa charged in October 2026. With the example config (35 X acco
 A name is half of what you need. "SynthID Detector" has a short life as a keyword and belongs to Google; the job it does, "ai image detector", is what people keep searching, and nobody owns it. Each day the radar reads the new names once more and writes one table with both:
 
 ```
-| Keyword | Type | Behind | New? | Est. searches/day | Started rising | Peak vs gpts | Peak day | Now | Decision |
-| **photocraft** | name | — | yes | 11416 | 2026-10-05 | 97 vs 3.1 | 2026-10-09 | still rising | **prioritize** |
-| **claude haiku 5.5** | name | — | no | 1669 | 2026-10-07 | 100 vs 23.7 | 2026-10-08 | still rising | **prioritize** |
-| **ai image detector** | generic | synthid detector | no | 2537 | — | 87 vs 31.6 | 2026-10-04 | flat | watch |
-| **photoshop alternative** ⚠ | generic | photocraft | no | 244 | — | 61 vs 61.7 | 2026-10-08 | flat | skip |
+| Keyword | Type | Behind | New? | Est. searches/day | Started rising | Peak vs gpts | Peak day | Last 7 days vs the 7 before | Now | Decision |
+| **photocraft** | name | — | yes | 12747 | 2026-10-05 | 97 vs 3.1 | 2026-10-09 | — | still rising | **prioritize** |
+| **claude haiku 5.5** | name | — | yes | 1863 | 2026-10-07 | 100 vs 23.7 | 2026-10-08 | ×6.0 | still rising | **prioritize** |
+| **ai image detector** | generic | synthid detector | no | 2537 | — | 87 vs 31.6 | 2026-10-04 | ×1.2 | flat | watch |
+| **photoshop alternative** ⚠ | generic | photocraft | no | 244 | — | 61 vs 61.7 | 2026-10-08 | ×1.8 | flat | skip |
 ```
 
 (a real run, 2026-10-12, shortened)
@@ -70,8 +70,9 @@ How it is made (`radar/usecases.py`):
 
 1. **Evidence**: the most-liked posts that mention the name (X advanced search) and, for a repository, its README.
 2. **Phrases**: a model reads the evidence and writes the keyword an ordinary person would type for each job it sees people doing, with a quote that backs it. A phrase built on another product's name ("photoshop alternative") is kept and marked ⚠: demand often hangs on the incumbent, and whether to use someone's brand is your call.
-3. **Volume**: Google Ads monthly searches for every phrase, one batch call. Phrases under `min_volume` are dropped; most are.
-4. **Trends**, twice per row: the term alone gives the shape (new or not, the day it started rising, the peak, what it is doing now); the term beside a benchmark keyword (`gpts` by default) gives the size.
+3. **Screen**: a second call scores how well the name answers each phrase; the loosely related ones are dropped. For Claude Haiku 5.5 it dropped all six proposed ("ai coding assistant", "github copilot alternative"); for SynthID Detector it kept all five.
+4. **Volume**: Google Ads monthly searches for the rest, one batch call. Phrases under `min_volume` are dropped; most are.
+5. **Trends**, twice per row: the term alone gives the shape (new or not, the day it started rising, the peak, the last week against the week before, what it is doing now); the term beside a benchmark keyword (`gpts` by default) gives the size.
 
 Searches a day are estimates. A generic term's come from its own Google Ads volume, moved to today along its own Trends curve. The benchmark is then sized from those terms, and a name, which has no volume data yet, is sized against the benchmark.
 

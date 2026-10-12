@@ -520,6 +520,7 @@ def _fake_usecase_network(monkeypatch):
         {"phrase": "ai image detector", "evidence": "check if any image is AI generated", "brand": False},
         {"phrase": "photoshop alternative", "evidence": "free clone", "brand": True},
         {"phrase": "nobody searches this", "evidence": "x", "brand": False}])
+    monkeypatch.setattr(usecases, "screen", lambda model, name, ev, cands: cands)
     monkeypatch.setattr(usecases, "volumes", lambda phrases, loc: (
         {"ai image detector": {"volume": 60000, "month": "2026-08"}, "photoshop alternative": {"volume": 6000, "month": "2026-08"},
          "nobody searches this": {"volume": 0, "month": ""}}, 90000))
@@ -532,7 +533,7 @@ def test_usecases_run_builds_one_table_and_reads_a_name_twice(cfg, tmp_path, mon
     _fake_usecase_network(monkeypatch)
     uc = usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY)
     rows = {r["phrase"]: r for r in uc["rows"]}
-    assert uc["proposed"] == 3 and uc["kept"] == 2 and "nobody searches this" not in rows
+    assert uc["proposed"] == 3 and uc["relevant"] == 3 and uc["kept"] == 2 and "nobody searches this" not in rows
     assert rows["synthid detector"]["kind"] == "name" and rows["synthid detector"]["decision"] == "prioritize"
     assert rows["ai image detector"]["per_day"] == 2000 and rows["ai image detector"]["decision"] == "watch"
     assert rows["photoshop alternative"]["brand"] and rows["photoshop alternative"]["decision"] == "skip"
@@ -560,3 +561,21 @@ def test_review_ignores_the_unsettled_days(cfg, tmp_path, monkeypatch):
     answer = {"tasks": [{"result": [{"items": [{"data": points}]}]}]}
     monkeypatch.setattr(review.aisa, "call_all", lambda calls: ({c["call_id"]: answer for c in calls}, 1200))
     assert review.review(cfg, conn, TODAY)["checked"][0]["verdict"] == "miss"
+
+
+def test_screen_drops_loosely_related_keywords_and_keeps_all_when_the_call_fails(monkeypatch):
+    cands = [{"phrase": "ai image detector"}, {"phrase": "chatgpt alternative"}, {"phrase": "ai audio detector"}]
+    ev = {"posts": [{"text": "check if any image is AI generated", "likes": 900, "by": "a"}], "readme": ""}
+    monkeypatch.setattr(usecases.aisa, "chat", lambda *a, **k: '[{"i": 0, "score": 0.95}, {"i": 1, "score": 0.2}, {"i": 2, "score": 0.7}]')
+    kept = usecases.screen("m", "synthid detector", ev, cands)
+    assert [(c["phrase"], c["relevance"]) for c in kept] == [("ai image detector", 0.95), ("ai audio detector", 0.7)]
+
+    def down(*a, **k):
+        raise usecases.aisa.AisaError("HTTP 500")
+    monkeypatch.setattr(usecases.aisa, "chat", down)
+    assert usecases.screen("m", "synthid detector", ev, cands) == cands
+
+
+def test_momentum_is_the_last_settled_week_against_the_week_before():
+    assert usecases.shape(_daily([10] * 76 + [20] * 7 + [40] * 7 + [0, 100]), TODAY)["momentum"] == 2.0
+    assert usecases.shape(_daily([0] * 83 + [40] * 7 + [0, 100]), TODAY)["momentum"] is None   # nothing the week before

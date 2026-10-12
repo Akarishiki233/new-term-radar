@@ -195,10 +195,10 @@ def keyword_table(cfg: dict, uc: dict) -> list[str]:
     if not uc.get("names"):
         return lines + [t("uc_none")]
     c = cfg["usecases"]
-    lines += [t("uc_intro", names=", ".join(uc["names"]), proposed=uc["proposed"], kept=uc["kept"], min=c["min_volume"],
+    lines += [t("uc_intro", names=", ".join(uc["names"]), proposed=uc["proposed"], relevant=uc["relevant"], kept=uc["kept"], min=c["min_volume"],
                 month=uc["volume_month"] or "?"),
               t("uc_bench", bench=uc["benchmark"], bench_daily=uc["bench_daily"]) if uc.get("bench_daily") else t("uc_bench_none", bench=uc["benchmark"]), "",
-              t("uc_cols", bench=uc["benchmark"]), "|---|---|---|---|---|---|---|---|---|---|"]
+              t("uc_cols", bench=uc["benchmark"]), "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in uc["rows"]:
         generic = r["kind"] == "generic"
         none = r.get("no_data")
@@ -207,7 +207,8 @@ def keyword_table(cfg: dict, uc: dict) -> list[str]:
             f"| **{r['phrase']}**{' ⚠' if generic and r['brand'] else ''} | {t('uc_type_generic' if generic else 'uc_type_name')} | "
             f"{', '.join(r['names']) or t('dash')} | {t('dash') if none else t('uc_yes' if r['new'] else 'uc_no')} | "
             f"{r['per_day'] if 'per_day' in r else t('dash')} | {r.get('started') or t('dash')} | {peak} | "
-            f"{t('dash') if none else r['peak_day']} | {t('uc_now_none') if none else t('uc_now_' + r['now'])} | {t('uc_' + r['decision'])} |")
+            f"{t('dash') if none else r['peak_day']} | {'×' + str(r['momentum']) if r.get('momentum') is not None else t('dash')} | "
+            f"{t('uc_now_none') if none else t('uc_now_' + r['now'])} | {t('uc_' + r['decision'])} |")
     lines += ["", t("uc_rules", min_daily=c["min_daily"])]
     if any(r["kind"] == "generic" and r["brand"] for r in uc["rows"]):
         lines.append(t("uc_brand_note"))

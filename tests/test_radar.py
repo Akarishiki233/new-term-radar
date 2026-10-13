@@ -619,6 +619,7 @@ def test_with_a_key_related_queries_join_the_table_and_other_names_become_leads(
     assert uc["tails"] == {"synthid detector": ["synthid detector online"]} and uc["cost_micros"] == 106200
     text = "\n".join(report.keyword_table(cfg, uc))
     assert "| **ai photo detector** 🔎 |" in text and "gpt image 2.5 (with synthid detector)" in text and "synthid detector online" in text
+    assert "incomplete today" not in text
     assert {"term": "gpt image 2.5", "kinds": ["cosearch"]}.items() <= report.usecase_leads(uc)[-1].items()
 
 
@@ -682,6 +683,7 @@ def test_names_and_big_generic_terms_take_their_shape_from_the_country(cfg, tmp_
     assert "trend_geo" not in rows["synthid detector"] and uc["country_errors"] == ["synthid detector: HTTP 502"]
     text = "\n".join(report.keyword_table(cfg, uc))
     assert "still rising (US)" in text and "worldwide data used instead: synthid detector" in text
+    assert "This table is incomplete today" in text
 
 
 def test_small_generic_terms_are_not_worth_a_country_lookup(cfg):

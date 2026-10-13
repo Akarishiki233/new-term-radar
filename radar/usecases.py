@@ -512,3 +512,8 @@ def names_to_read(leads_today: list[dict], recent_sources: list[dict]) -> list[s
         if READ_KINDS & set(r.get("kinds", [])) and (named is None or named >= READ_MIN) and r["term"] not in out:
             out.append(r["term"])
     return out
+
+
+def degraded(uc: dict) -> bool:
+    """A source failed during this run, so the table holds less than it would have."""
+    return bool(uc.get("posts_error") or uc.get("related_errors") or uc.get("country_errors"))

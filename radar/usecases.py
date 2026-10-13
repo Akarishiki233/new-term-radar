@@ -66,6 +66,7 @@ CALIBRATE_MIN = 1000       # monthly searches a term needs to help size the benc
 NEW_BASE_MAX = 10          # a baseline under 10 (of 100) means the term barely existed before
 MAX_PER_NAME = 6
 STATE_DAYS = 30
+ASKED_MAX = 8              # names read in one `keywords` call: each costs several paid lookups
 SEARCH_TOOL = "get_twitter_tweet_advanced_search"
 VOLUME_TOOL = "post_dataforseo_keywords_gads_search_volume_live"
 SYSTEM = (
@@ -435,13 +436,16 @@ def measure(rows: list[dict], series: dict[str, dict], min_daily: int, today: da
     return daily
 
 
-def run(cfg: dict, state: Path, names: list[str], repos: dict[str, str], today: date | None = None) -> dict:
-    """names: today's named leads, most important first. repos: {name: "owner/repo"} where known."""
+def run(cfg: dict, state: Path, names: list[str], repos: dict[str, str], today: date | None = None,
+        on_request: bool = False) -> dict:
+    """names: today's named leads, most important first. repos: {name: "owner/repo"} where known.
+    `on_request` is for names a person asked about (the `keywords` command, the MCP tool): all of
+    them are read now, up to ASKED_MAX, and the read-twice record is left alone."""
     c = cfg["usecases"]
     today = today or date.today()
     path = state / "usecases.json.gz"
-    seen: dict[str, dict] = snap.load(path) or {}
-    todo = due(names, seen, today, c["per_day"], c["recheck_days"])
+    seen: dict[str, dict] = {} if on_request else snap.load(path) or {}
+    todo = list(dict.fromkeys(names))[:ASKED_MAX] if on_request else due(names, seen, today, c["per_day"], c["recheck_days"])
     if not todo:
         return {"names": [], "rows": [], "proposed": 0, "cost_micros": 0}
     ev, cost = evidence(todo, repos, today)
@@ -482,11 +486,12 @@ def run(cfg: dict, state: Path, names: list[str], repos: dict[str, str], today: 
     daily = measure(rows, series, c["min_daily"], today, local)
     order = {"prioritize": 0, "watch": 1, "skip": 2}
     rows.sort(key=lambda r: (order[r["decision"]], -(r.get("per_day") or 0), -(r.get("volume") or 0)))
-    for name in todo:
-        s = seen.setdefault(name, {"first": today.isoformat(), "runs": 0})
-        s["runs"] += 1
-    cutoff = (today - timedelta(days=STATE_DAYS)).isoformat()
-    snap.save(path, {n: s for n, s in seen.items() if s["first"] >= cutoff})
+    if not on_request:
+        for name in todo:
+            s = seen.setdefault(name, {"first": today.isoformat(), "runs": 0})
+            s["runs"] += 1
+        cutoff = (today - timedelta(days=STATE_DAYS)).isoformat()
+        snap.save(path, {n: s for n, s in seen.items() if s["first"] >= cutoff})
     return {"names": todo, "rows": rows, "proposed": asked, "relevant": len(proposed), "kept": len(generic), "benchmark": bench,
             "bench_daily": round(daily) if daily else None, "volume_month": next((r["month"] for r in generic if r.get("month")), ""),
             "no_evidence": [n for n in todo if not ev[n]["posts"] and not ev[n]["readme"]],

@@ -180,6 +180,54 @@ python scripts/gsc_auth.py gsc_client.json   # 打开一次浏览器授权，写
 
 `--mail` 通过 [Resend](https://resend.com) 发送报告。设置 `RESEND_API_KEY`、`EMAIL_FROM`（你在 Resend 验证过的域名下的地址）和 `RADAR_EMAIL_TO`（多个用逗号分隔）。要 HTML 版需要 `pip install markdown`。
 
+## 在 agent 里用：两个 skill 和一个 MCP 服务器
+
+### Skill
+
+`skills/` 里有两个 [Agent Skill](https://agentskills.io/home)，按工作本身的两段来拆：
+
+| Skill | 做什么 |
+|---|---|
+| `ai-listening` | 把各路信号最近 24 小时的新东西收集起来、去重，出一份名字报告 |
+| `seo-new-keywords-research` | 给它名字，或者一段提到这些名字的原始文本，它返回关键词优先级表：每个名字背后的通用词，经过筛选、估算规模并给出决策 |
+
+```bash
+npx skills add zhuyansen/new-term-radar
+```
+
+然后对你的 agent 说「出一份 AI listening 报告」或「给 PhotoCraft 和 SynthID Detector 做关键词调研」。skill 会在本机没有这个仓库时把它克隆到 `~/new-term-radar`，在任何付费运行之前先告诉你大概花多少，表不完整时也会说明。
+
+### MCP 服务器
+
+给支持 MCP 的客户端用（Claude Code、Cursor、Claude Desktop）：
+
+```bash
+pip install "git+https://github.com/zhuyansen/new-term-radar#egg=new-term-radar[mcp]"
+```
+
+```json
+{
+  "mcpServers": {
+    "new-term-radar": {
+      "command": "new-term-radar-mcp",
+      "env": {
+        "AISA_API_KEY": "...",
+        "RADAR_CONFIG": "/绝对路径/config.json",
+        "RADAR_STATE": "/绝对路径/state"
+      }
+    }
+  }
+}
+```
+
+| 工具 | 返回什么 | 花费和耗时 |
+|---|---|---|
+| `recent_leads` | 雷达记下的线索，带复盘结论和各信号命中率 | 免费，立刻返回 |
+| `keyword_table` | 你给的名字的新词表 | 每个名字约 $0.05，每次调用另加 $0.09；每个名字 40 到 90 秒 |
+| `run_radar` | 跑一次 `sources` 或 `daily`，返回报告 | 付费，要几分钟。只适合第一次试用，定时运行应该交给 cron 或 Actions |
+
+把 `RADAR_STATE` 指向定时任务写入的那个目录，`recent_leads` 看到的就是定时任务记下的线索。同样的两个功能在命令行里也有：`python -m radar keywords "名字" …` 和 `python -m radar leads`。
+
 ## 在 GitHub Actions 上跑
 
 `.github/workflows/radar.yml` 每 8 小时跑一次 `sources`、每天跑一次 `daily`，状态存在 Actions 缓存里，报告写到每次运行的摘要页。默认关闭，需要你主动开启：

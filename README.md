@@ -187,6 +187,54 @@ python scripts/gsc_auth.py gsc_client.json   # opens a browser once, writes gsc_
 
 `--mail` sends the report through [Resend](https://resend.com). Set `RESEND_API_KEY`, `EMAIL_FROM` (an address on a domain you verified there) and `RADAR_EMAIL_TO` (comma-separated). `pip install markdown` for the HTML version.
 
+## Use it from an agent: two skills and an MCP server
+
+### Skills
+
+Two [Agent Skills](https://agentskills.io/home) live in `skills/`, split the way the work splits:
+
+| Skill | What it does |
+|---|---|
+| `ai-listening` | Collects what is new in the last 24 hours across the signals, deduplicated, as one report of names |
+| `seo-new-keywords-research` | Takes names, or raw text that mentions them, and returns the keyword priority table: the generic terms behind each name, screened, sized and given a decision |
+
+```bash
+npx skills add zhuyansen/new-term-radar
+```
+
+Then ask your agent for "an AI listening report" or "keyword research on PhotoCraft and SynthID Detector". The skills clone this repository to `~/new-term-radar` if it is not there, tell you the cost before any paid run, and say when a table is incomplete.
+
+### MCP server
+
+For clients that speak MCP (Claude Code, Cursor, Claude Desktop):
+
+```bash
+pip install "git+https://github.com/zhuyansen/new-term-radar#egg=new-term-radar[mcp]"
+```
+
+```json
+{
+  "mcpServers": {
+    "new-term-radar": {
+      "command": "new-term-radar-mcp",
+      "env": {
+        "AISA_API_KEY": "...",
+        "RADAR_CONFIG": "/absolute/path/to/config.json",
+        "RADAR_STATE": "/absolute/path/to/state"
+      }
+    }
+  }
+}
+```
+
+| Tool | What it returns | Cost and time |
+|---|---|---|
+| `recent_leads` | What the radar kept, with review verdicts and the hit rate per signal | free, instant |
+| `keyword_table` | The keyword table for names you give it | about $0.05 a name plus $0.09 a call; 40 to 90 seconds a name |
+| `run_radar` | One `sources` or `daily` run and its report | paid; minutes. For a first try: the schedule belongs in cron or Actions |
+
+Point `RADAR_STATE` at the directory your scheduled runs write to and `recent_leads` shows their leads. The same two commands exist on the command line: `python -m radar keywords "name" …` and `python -m radar leads`.
+
 ## Run it on GitHub Actions
 
 `.github/workflows/radar.yml` runs `sources` every 8 hours and `daily` once a day, keeps the state in the Actions cache, and writes each report to the run summary. It is off until you opt in:

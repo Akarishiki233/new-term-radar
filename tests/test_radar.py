@@ -725,3 +725,61 @@ def test_a_failed_post_search_costs_one_name_its_posts_not_the_step(monkeypatch)
     ev, cost = usecases.evidence(["photocraft", "synthid detector"], {"photocraft": "storytold/photocraft"}, TODAY)
     assert cost == 3000 and ev["photocraft"]["readme"] and ev["photocraft"]["posts"] == []
     assert ev["photocraft"]["error"] == "HTTP 504: 504 Gateway Time-out" and len(ev["synthid detector"]["posts"]) == 1
+
+
+# --- names someone asks about: the `keywords` command and the MCP tool ---------------------------
+
+def test_keywords_on_request_reads_every_name_now_and_leaves_the_record_alone(cfg, tmp_path, monkeypatch):
+    _fake_usecase_network(monkeypatch)
+    uc, text = cli.keyword_table(cfg, tmp_path, ["SynthID Detector ", "synthid detector", ""], {})
+    assert uc["names"] == ["synthid detector"] and "| **ai image detector** |" in text
+    again, _ = cli.keyword_table(cfg, tmp_path, ["synthid detector"], {})
+    assert again["names"] == ["synthid detector"]                 # asked again, read again
+    assert not (tmp_path / "usecases.json.gz").exists()           # the daily run's read-twice record is untouched
+    many, _ = cli.keyword_table(cfg, tmp_path, [f"name {i}" for i in range(20)], {})
+    assert len(many["names"]) == usecases.ASKED_MAX
+
+
+def test_leads_command_lists_what_was_kept(tmp_path, capsys):
+    conn = store.connect(tmp_path)
+    store.record(conn, [_lead("strata", ["breakout"], named=0.9)], date.today() - timedelta(days=2))
+    store.record(conn, [_lead("old one", ["x"])], date.today() - timedelta(days=30))
+    data = cli.kept_leads(tmp_path, 7)
+    assert [r["term"] for r in data["leads"]] == ["strata"] and data["hit_rates"]["pending"] == 2
+    assert cli.main(["leads", "--state", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "strata  [breakout]" in out and "1 leads in the last 7 days" in out
+
+
+# --- the MCP server -----------------------------------------------------------------------------
+
+def test_mcp_tools_answer_and_never_print(cfg, tmp_path, monkeypatch, capsys):
+    import pytest
+    pytest.importorskip("mcp")
+    from radar import mcp_server
+    (tmp_path / "config.json").write_text(json.dumps({"x_accounts": {"labs": ["a"]}}))
+    monkeypatch.setenv("RADAR_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("RADAR_STATE", str(tmp_path / "state"))
+    store.record(store.connect(tmp_path / "state"), [_lead("photocraft", ["breakout"], named=0.95)], date.today())
+    assert [r["term"] for r in mcp_server.recent_leads(7)["leads"]] == ["photocraft"]
+
+    _fake_usecase_network(monkeypatch)
+    out = mcp_server._keyword_table(["synthid detector"], {})
+    assert "| **ai image detector** |" in out["table_markdown"] and out["incomplete"] is False and out["cost_usd"] == 0.1
+
+    monkeypatch.setattr(cli.sources, "x_new", lambda cfg, state: {"posts": 400, "cost_micros": 3000, "terms": [
+        {"term": "qwen3.9", "recent": 2, "note": "X: 2 accounts", "examples": ["@a: Qwen3.9 is out"]}]})
+    monkeypatch.setattr(cli.sources, "hf_new", lambda cfg, state: {"models": 100, "terms": []})
+    monkeypatch.setattr(report.judge, "score", lambda rows, model: {"judged": 0})
+    ran = mcp_server._run("sources", [])
+    assert ran["wrote_report"] and "**qwen3.9**" in ran["report_markdown"]
+    assert capsys.readouterr().out == ""        # stdout is the protocol channel
+
+
+def test_skills_have_a_name_and_a_description():
+    root = Path(__file__).resolve().parents[1] / "skills"
+    for name in ("ai-listening", "seo-new-keywords-research"):
+        text = (root / name / "SKILL.md").read_text()
+        head = re.match(r"---\nname: (\S+)\ndescription: (.+)\n---\n", text)
+        assert head and head.group(1) == name and 100 < len(head.group(2)) < 1024
+        assert "python -m radar" in text and "AISA_API_KEY" in text

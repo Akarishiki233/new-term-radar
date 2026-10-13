@@ -22,7 +22,7 @@ One example it was built around: [Niko1221/Strata](https://github.com/Niko1221/S
 
 ## What it reads
 
-![How the radar works: four signals, a name judge, the keyword table, a daily report and a 14-day check](docs/radar.en.gif)
+![How the radar works: four signals, a name judge, the keyword table, a daily report and a 14-day check; used from the command line, three Agent Skills or an MCP server](docs/radar.en.gif)
 
 | Signal | What it catches | Needs | Cost |
 |---|---|---|---|

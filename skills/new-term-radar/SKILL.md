@@ -22,7 +22,7 @@ The whole job in one run: collect what is new, then work out which keywords are 
 python -m radar keywords "photocraft" "synthid detector" --repo "photocraft=storytold/photocraft" --json
 ```
 
-About $0.05 a name plus $0.09 a call, 40 to 90 seconds a name, eight names at most. One call for all the names.
+About 0.05 USD a name plus 0.09 USD a call, 40 to 90 seconds a name, eight names at most. One call for all the names.
 
 **The user wants today's new terms**: run everything.
 
@@ -30,7 +30,7 @@ About $0.05 a name plus $0.09 a call, 40 to 90 seconds a name, eight names at mo
 python -m radar daily --out report.md
 ```
 
-With the example config this is about $0.30 and 10 to 15 minutes: it reads every X account in `config.json` ($0.003 and 10 seconds each), finds breakout repositories and new sitemap pages, scores which terms are names, then builds the keyword table for up to five of the day's names. It writes `report.md` and `report.json`.
+With the example config this is about 0.30 USD and 10 to 15 minutes: it reads every X account in `config.json` (0.003 USD and 10 seconds each), finds breakout repositories and new sitemap pages, scores which terms are names, then builds the keyword table for up to five of the day's names. It writes `report.md` and `report.json`.
 
 Say the cost and the time before either command, and do not run `daily` twice in a row: the second run reports only what changed since the first.
 

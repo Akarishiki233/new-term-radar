@@ -15,7 +15,7 @@ Produce one report: the names of new AI models, products and repositories seen i
 
 ## Cost and time, say this first
 
-A run reads every X account in `config.json`: about $0.003 and 10 seconds each, so the example list of 35 accounts is about $0.11 and 6 minutes. Tell the user the estimate before you start, and do not run it twice in a row: the second run reports only what changed since the first.
+A run reads every X account in `config.json`: about 0.003 USD and 10 seconds each, so the example list of 35 accounts is about 0.11 USD and 6 minutes. Tell the user the estimate before you start, and do not run it twice in a row: the second run reports only what changed since the first.
 
 ## Run
 

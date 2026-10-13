@@ -783,3 +783,6 @@ def test_skills_have_a_name_and_a_description():
         head = re.match(r"---\nname: (\S+)\ndescription: (.+)\n---\n", text)
         assert head and head.group(1) == name and 100 < len(head.group(2)) < 1024
         assert "python -m radar" in text and "AISA_API_KEY" in text
+        # Claude Code replaces $0, $1 ... in a skill's text with the user's arguments: "$0.05" came out
+        # as "<what the user typed>.05" on the first real run. Amounts are written "0.05 USD".
+        assert not re.search(r"\$\d", text)

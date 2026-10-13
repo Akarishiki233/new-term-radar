@@ -27,13 +27,13 @@ If the user gave names, use them. If they gave text (a listening report, posts, 
 
 ## Step 2: say the cost, then run
 
-About $0.05 a name plus $0.09 a call, and 40 to 90 seconds a name. State the estimate, then:
+About 0.05 USD a name plus 0.09 USD a call, and 40 to 90 seconds a name. State the estimate, then:
 
 ```bash
 python -m radar keywords "photocraft" "synthid detector" --repo "photocraft=storytold/photocraft" --json
 ```
 
-Drop `--json` for the Markdown table alone. Run one call with all the names, not one call per name: the $0.09 is per call.
+Drop `--json` for the Markdown table alone. Run one call with all the names, not one call per name: the 0.09 USD is per call.
 
 ## Step 3: read the result honestly
 

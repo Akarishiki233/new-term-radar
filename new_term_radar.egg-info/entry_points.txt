@@ -1,3 +1,0 @@
-[console_scripts]
-new-term-radar = radar.__main__:main
-new-term-radar-mcp = radar.mcp_server:main

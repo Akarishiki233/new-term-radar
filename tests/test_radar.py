@@ -638,6 +638,26 @@ def test_without_a_key_the_table_says_the_source_is_off_and_a_failure_is_reporte
     assert "HTTP 502" in "\n".join(report.keyword_table(cfg, uc))
 
 
+def test_other_names_leave_out_old_products_siblings_and_spelling_variants():
+    # what the first real run kept beside filmcraft and pdfcraft (2026-10-13)
+    viewed = [{"phrase": p, "is_name": True, "rising": True, "established": old} for p, old in (
+        ("premiere pro", True), ("davinci resolve", True), ("photocraft github", False), ("gpt image 2.5", False),
+        ("adobe artcraft", False), ("artcraft adobe", False))]
+    assert [x["term"] for x in usecases.other_names("filmcraft", viewed, ["photocraft", "filmcraft"])] == ["gpt image 2.5", "adobe artcraft"]
+    tails, cands = usecases.split_related("pdfcraft", {"rising": ["pdf craft", "pdf-craft review", "merge pdf files"], "top": []})
+    assert tails == ["pdf craft", "pdf-craft review"] and [c["phrase"] for c in cands] == ["merge pdf files"]
+
+
+def test_every_name_gets_the_country_series_and_the_cap_is_on_generic_terms(cfg, monkeypatch):
+    rows = [{"phrase": f"name{i}", "kind": "name"} for i in range(5)] + \
+           [{"phrase": f"g{v}", "kind": "generic", "volume": v} for v in (27100, 22200, 8100, 6600, 900)]
+    cfg["usecases"]["country_max"] = 3
+    asked = []
+    monkeypatch.setattr(usecases.goanyapi, "daily_series", lambda term, geo: (asked.append(term) or [(TODAY, 1)], 6000))
+    out, cost, errors = usecases.country_series(rows, cfg["usecases"])
+    assert sorted(asked) == sorted([f"name{i}" for i in range(5)] + ["g27100", "g22200", "g8100"]) and cost == 48000 and not errors
+
+
 def test_other_names_must_be_rising_and_not_the_same_family():
     viewed = [{"phrase": p, "is_name": True, "rising": r} for p, r in (
         ("gpt image 2.5", True), ("google nano banana", True), ("nano banana pro", True), ("google gemini", False), ("mistral large 4", True))]

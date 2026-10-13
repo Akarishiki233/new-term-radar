@@ -48,6 +48,7 @@ import os
 import re
 import statistics
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -175,12 +176,20 @@ SCREEN = (
     "franchise or character name ('photoshop alternative', 'free up mac disk space').\n"
     "`name`, true or false: the keyword is itself the name of another specific product, model or tool, with or "
     "without its maker ('gpt image 2.5', 'gemini 4 argon', 'mistral large 4'), not a task or a kind of tool.\n"
+    "`established`, true or false: only when `name` is true. True when you know that product to have existed for a "
+    "year or more ('premiere pro', 'davinci resolve', 'adobe lightroom', 'google gemini'); false when it is new or "
+    "you do not know it.\n"
     "Answer with JSON only, one object per candidate, in the same order: "
-    "[{\"i\": 0, \"score\": 0.9, \"brand\": false, \"name\": false}, ...]"
+    "[{\"i\": 0, \"score\": 0.9, \"brand\": false, \"name\": false, \"established\": false}, ...]"
 )
 RELEVANT_MIN = 0.6
 RELATED_KEPT = 12          # related queries per name that go to the screen
 COSEARCH_KEPT = 5          # other names kept as leads per name
+COUNTRY_WORKERS = 3        # one-country lookups in flight at once
+
+
+def squash(text: str) -> str:
+    return re.sub(r"[\s\-_.]+", "", text.lower())
 
 
 def split_related(name: str, related: dict[str, list[str]]) -> tuple[list[str], list[dict]]:
@@ -193,8 +202,8 @@ def split_related(name: str, related: dict[str, list[str]]) -> tuple[list[str], 
             if q in seen or q == name:
                 continue
             seen.add(q)
-            if all(w in q.split() for w in words) or name in q:
-                tails.append(q)
+            if all(w in q.split() for w in words) or squash(name) in squash(q):
+                tails.append(q)      # also "pdf craft" for "pdfcraft": the same name, typed apart
             elif len(q.split()) >= 2:
                 cands.append({"phrase": q, "brand": False, "source": "searched", "rising": kind == "rising",
                               "evidence": f"searched on Google together with {name} ({kind})"})
@@ -223,20 +232,29 @@ def screen(model: str, name: str, ev: dict, cands: list[dict]) -> list[dict]:
     for i, c in enumerate(cands):
         v = views.get(i)
         try:
-            out.append(dict(c, relevance=float(v["score"]), brand=c["brand"] or bool(v.get("brand")), is_name=bool(v.get("name")))
+            out.append(dict(c, relevance=float(v["score"]), brand=c["brand"] or bool(v.get("brand")), is_name=bool(v.get("name")),
+                            established=bool(v.get("established")))
                        if v else c)
         except (KeyError, TypeError, ValueError):
             out.append(c)
     return out
 
 
-def other_names(name: str, viewed: list[dict]) -> list[dict]:
-    """Names of other things that are rising in searches beside this one: leads of their
-    own. A query sharing a word of the name is the same family ("google nano banana",
-    "nano banana pro" beside "nano banana 2.1"), not another thing."""
+def other_names(name: str, viewed: list[dict], reading: list[str] = ()) -> list[dict]:
+    """Names of other NEW things rising in searches beside this one: leads of their own.
+    Left out: a query sharing a word with the name, which is the same family ("google nano
+    banana" beside "nano banana 2.1"); one that holds a name already being read today
+    ("photocraft github" beside "pdfcraft"); and an established product the new thing is
+    compared with ("premiere pro", "davinci resolve" beside "filmcraft")."""
     family = {w for w in name.split() if w.isalpha() and len(w) > 2}
-    out = [{"term": u["phrase"], "with": name} for u in viewed
-           if u.get("is_name") and u.get("rising") and not family & set(u["phrase"].split())]
+    siblings = [squash(n) for n in reading if n != name]
+    out, seen = [], set()
+    for u in viewed:
+        words = frozenset(u["phrase"].split())      # "adobe artcraft" and "artcraft adobe" are one name
+        if (u.get("is_name") and u.get("rising") and not u.get("established") and words not in seen
+                and not family & words and not any(s in squash(u["phrase"]) for s in siblings)):
+            seen.add(words)
+            out.append({"term": u["phrase"], "with": name})
     return out[:COSEARCH_KEPT]
 
 
@@ -313,17 +331,29 @@ def shape(points: list[tuple[date, int]], today: date, rule: dict = WORLD) -> di
 
 
 def country_series(rows: list[dict], c: dict) -> tuple[dict[str, list], int, list[str]]:
-    """The one-country series for the rows worth it: the names, then the generic terms
-    with at least `country_min_volume` searches a month, `country_max` rows at most."""
-    picked = [r for r in rows if r["kind"] == "name"] + \
-        sorted((r for r in rows if r["kind"] == "generic" and r.get("volume", 0) >= c["country_min_volume"]), key=lambda r: -r["volume"])
-    out, cost, errors = {}, 0, []
-    for r in picked[:c["country_max"]]:
+    """The one-country series for the rows worth it: every name, and the generic terms with
+    at least `country_min_volume` searches a month, `country_max` of those at most. The cap
+    is on the generic terms alone: when it covered names too, five names left room for three
+    generic terms, and "photoshop alternative" fell back to the worldwide series and read
+    flat the day after it had read rising. A lookup takes 20 to 55 seconds, so they run
+    COUNTRY_WORKERS at a time."""
+    generic = sorted((r for r in rows if r["kind"] == "generic" and r.get("volume", 0) >= c["country_min_volume"]),
+                     key=lambda r: -r["volume"])[:c["country_max"]]
+    picked = [r["phrase"] for r in rows if r["kind"] == "name"] + [r["phrase"] for r in generic]
+
+    def one(phrase: str):
         try:
-            out[r["phrase"]], spent = goanyapi.daily_series(r["phrase"], c["related_geo"])
-            cost += spent
+            return phrase, goanyapi.daily_series(phrase, c["related_geo"]), ""
         except goanyapi.GoAnyError as exc:
-            errors.append(f"{r['phrase']}: {exc}")
+            return phrase, ([], 0), str(exc)
+    out, cost, errors = {}, 0, []
+    with ThreadPoolExecutor(max_workers=COUNTRY_WORKERS) as pool:
+        for phrase, (series, spent), error in pool.map(one, picked):
+            cost += spent
+            if error:
+                errors.append(f"{phrase}: {error}")
+            else:
+                out[phrase] = series
     return out, cost, errors
 
 
@@ -469,7 +499,7 @@ def run(cfg: dict, state: Path, names: list[str], repos: dict[str, str], today: 
             cands += [u for u in searched if u["phrase"] not in have]
         asked += len(cands)
         viewed = screen(c["model"], name, ev[name], cands)
-        cosearch += other_names(name, viewed)
+        cosearch += other_names(name, viewed, todo)
         for u in relevant(viewed):
             row = proposed.setdefault(u["phrase"], {**u, "term": u["phrase"], "kind": "generic", "names": []})
             row["names"].append(name)

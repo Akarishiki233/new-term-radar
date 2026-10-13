@@ -33,6 +33,10 @@ flowchart LR
   J -->|name| R["report + radar.db"]
   J -->|common word| O["listed at the bottom"]
   GSC["④ your Search Console\n(optional)"] --> R
+  R --> K["keyword table:\nthe generic terms behind the names"]
+  P["posts and README\nabout each name"] --> K
+  GA["Trends related queries,\nUS daily series\n(GoAnyAPI, optional)"] -.-> K
+  K --> R
   R -->|14 days later| T["⑤ Google Trends check"]
   T --> H["hit rate per signal"]
   H --> R
@@ -88,6 +92,21 @@ What to expect from it, from the first eight names we ran it on:
 - For pure model releases (Claude Haiku 5.5, Nano Banana 2.1) the evidence was announcements and benchmarks, and the phrases proposed were weak ("ai coding assistant"). It works better for products and repositories that do one job.
 - **Google Trends' last two days are not settled.** For unrelated terms they came back as 0 and then 100, which reads as a spike. Our first pass was fooled by exactly this; every reader in the code now drops those two days, and a rise must last two days to count.
 - Google Ads volumes run about two months behind. Trends reads nothing reliable for terms under a few hundred searches a month.
+
+### When a source is missing or down
+
+The table is still written, but it gets thinner, and it says which part is missing:
+
+| What happens | What the table loses | The line it prints |
+|---|---|---|
+| No `GOANYAPI_API_KEY` (the default) | The 🔎 rows, each name's long-tails, the other names searched alongside, and the `(US)` readings. Phrases come from the model alone and every curve from the worldwide series, where a real move can read flat | "Related queries are off: set GOANYAPI_API_KEY…" |
+| GoAnyAPI's Trends is down (seen on its first day in use, 2026-10-12) | The same as having no key, for that run | "Related queries failed for: …" and "Country series failed, worldwide data used instead: …" |
+| AIsa's post search fails for a name (timeouts seen twice on 2026-10-13) | That name's posts. A repository still has its README; a model or product without one is left with the related queries only, and with no GoAnyAPI key it gets no generic terms that day | "The post search failed; this run used READMEs and related queries only: …" |
+| Neither posts nor a README for a name | Its generic terms; the name's own row stays | "No posts or README found for: …" |
+| No lead that day is a thing with a name score of 0.8 or more | The whole table | "Nothing to read today…" |
+| AIsa's search-volume or Trends lookup fails | The whole table: these two are not replaceable | the error, in place of the table |
+
+A thin table is not a quiet day. Read the lines under it before you conclude that nothing moved.
 
 Set `"usecases": {"per_day": 0}` or pass `--skip usecases` to turn it off.
 

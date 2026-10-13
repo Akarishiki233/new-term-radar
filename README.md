@@ -203,6 +203,13 @@ Three [Agent Skills](https://agentskills.io/home) live in `skills/`: one that do
 npx skills add zhuyansen/new-term-radar
 ```
 
+In Claude Code the three skills also install as a plugin:
+
+```
+/plugin marketplace add zhuyansen/new-term-radar
+/plugin install new-term-radar@new-term-radar
+```
+
 Then ask your agent for "today's new AI keywords", "an AI listening report" or "keyword research on PhotoCraft and SynthID Detector". The skills clone this repository to `~/new-term-radar` if it is not there, tell you the cost before any paid run, and say when a table is incomplete.
 
 ### MCP server
@@ -283,3 +290,5 @@ The diagram is drawn by `docs/make_diagram.py` (needs `rsvg-convert` and `ffmpeg
 ## License
 
 MIT. Extracted from the radar that runs daily behind [agentskillshub.top](https://agentskillshub.top).
+
+<!-- mcp-name: io.github.zhuyansen/new-term-radar -->

@@ -697,7 +697,8 @@ def test_names_and_big_generic_terms_take_their_shape_from_the_country(cfg, tmp_
     monkeypatch.setattr(usecases.goanyapi, "daily_series", daily_series)
     uc = usecases.run(cfg, tmp_path, ["synthid detector"], {}, TODAY)
     rows = {r["phrase"]: r for r in uc["rows"]}
-    assert asked == ["synthid detector", "ai image detector", "photoshop alternative"]     # the name first, then by volume
+    # The lookups run three at a time, so the order they are recorded in is the threads' own.
+    assert sorted(asked) == ["ai image detector", "photoshop alternative", "synthid detector"]
     assert rows["ai image detector"]["trend_geo"] and rows["ai image detector"]["now"] == "rising"
     assert rows["ai image detector"]["decision"] == "prioritize"      # flat worldwide, up in the US
     assert "trend_geo" not in rows["synthid detector"] and uc["country_errors"] == ["synthid detector: HTTP 502"]
@@ -820,3 +821,34 @@ def test_the_aisa_key_comes_from_the_environment_or_the_cli_login(tmp_path, monk
     assert aisa.key() == "from-cli"
     monkeypatch.setenv("AISA_API_KEY", "from-env")
     assert aisa.key() == "from-env"
+
+
+def test_every_manifest_carries_the_same_version():
+    # A release is one number in five places; the registry rejects a server.json whose
+    # version PyPI does not have.
+    import radar
+    root = Path(__file__).resolve().parents[1]
+    server = json.loads((root / "server.json").read_text())
+    plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
+    pyproject = re.search(r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(), re.M).group(1)
+    assert {pyproject, server["version"], server["packages"][0]["version"], plugin["version"]} == {radar.__version__}
+    assert len(server["description"]) <= 100                                  # the registry's limit
+    assert f"mcp-name: {server['name']} -->" in (root / "README.md").read_text()   # how the registry checks who owns the PyPI package
+
+
+def test_the_mcp_command_says_what_is_missing(monkeypatch, capsys):
+    import builtins
+    real = builtins.__import__
+
+    def without_mcp(name, *args, **kwargs):
+        if name == "mcp" or name.startswith("mcp."):
+            raise ImportError(name)
+        return real(name, *args, **kwargs)
+
+    import sys
+    import radar
+    monkeypatch.delitem(sys.modules, "radar.mcp_server", raising=False)   # an earlier test may have loaded it;
+    monkeypatch.delattr(radar, "mcp_server", raising=False)               # the package keeps its own reference
+    monkeypatch.setattr(builtins, "__import__", without_mcp)
+    assert cli.main(["mcp"]) == 1
+    assert "new-term-radar[mcp]" in capsys.readouterr().err

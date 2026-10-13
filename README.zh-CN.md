@@ -196,6 +196,13 @@ python scripts/gsc_auth.py gsc_client.json   # 打开一次浏览器授权，写
 npx skills add zhuyansen/new-term-radar
 ```
 
+在 Claude Code 里，这三个 skill 也可以作为插件安装：
+
+```
+/plugin marketplace add zhuyansen/new-term-radar
+/plugin install new-term-radar@new-term-radar
+```
+
 然后对你的 agent 说「今天有哪些 AI 新词」「出一份 AI listening 报告」或「给 PhotoCraft 和 SynthID Detector 做关键词调研」。skill 会在本机没有这个仓库时把它克隆到 `~/new-term-radar`，在任何付费运行之前先告诉你大概花多少，表不完整时也会说明。
 
 ### MCP 服务器

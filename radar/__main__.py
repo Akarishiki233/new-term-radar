@@ -15,6 +15,7 @@ Signals:
 
   python -m radar keywords "name one" "name two" [--repo "name one=owner/repo"] [--json]
   python -m radar leads    [--days 7] [--json]
+  python -m radar mcp      the MCP server on stdio (needs the `mcp` package)
 
 `keywords` builds the keyword table for names you give it, now (about $0.05 a name plus
 $0.09 a call for the volume lookup). `leads` lists what the radar has kept, with the
@@ -139,7 +140,21 @@ def cmd_leads(args, state: Path) -> int:
     return 0
 
 
+def serve_mcp() -> int:
+    """`new-term-radar mcp`: the stdio MCP server under the package's own name, so a
+    client that only knows the PyPI name can start it (`uvx --with mcp new-term-radar mcp`)."""
+    try:
+        from . import mcp_server
+    except ImportError:
+        print('The MCP server needs the `mcp` package: pip install "new-term-radar[mcp]"', file=sys.stderr)
+        return 1
+    mcp_server.main()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    if (sys.argv[1:] if argv is None else argv)[:1] == ["mcp"]:
+        return serve_mcp()
     prog = "python -m radar" if __package__ == "radar" else "new-term-radar"  # installed, the package has another name
     p = argparse.ArgumentParser(prog=prog, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("command", choices=["daily", "sources", "keywords", "leads"])

@@ -110,7 +110,7 @@ Python 3.10 or newer. The radar uses only the standard library.
 git clone https://github.com/zhuyansen/new-term-radar
 cd new-term-radar
 cp config.example.json config.json      # then edit: your X accounts, sitemaps, topics
-export AISA_API_KEY=...                 # from https://go.aisa.one/yansen-zhu
+export AISA_API_KEY=...                 # from https://go.aisa.one/yansen-zhu; or `aisa login` with the AIsa CLI
 python -m radar daily --out report.md
 ```
 

@@ -786,3 +786,17 @@ def test_skills_have_a_name_and_a_description():
         # Claude Code replaces $0, $1 ... in a skill's text with the user's arguments: "$0.05" came out
         # as "<what the user typed>.05" on the first real run. Amounts are written "0.05 USD".
         assert not re.search(r"\$\d", text)
+
+
+def test_the_aisa_key_comes_from_the_environment_or_the_cli_login(tmp_path, monkeypatch):
+    from radar import aisa
+    monkeypatch.setattr(aisa.Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("AISA_API_KEY", raising=False)
+    import pytest
+    with pytest.raises(aisa.AisaError, match="aisa login"):
+        aisa.key()
+    (tmp_path / ".aisa").mkdir()
+    (tmp_path / ".aisa" / "key").write_text("from-cli\n")
+    assert aisa.key() == "from-cli"
+    monkeypatch.setenv("AISA_API_KEY", "from-env")
+    assert aisa.key() == "from-env"

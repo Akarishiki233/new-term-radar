@@ -180,14 +180,15 @@ python scripts/gsc_auth.py gsc_client.json   # 打开一次浏览器授权，写
 
 `--mail` 通过 [Resend](https://resend.com) 发送报告。设置 `RESEND_API_KEY`、`EMAIL_FROM`（你在 Resend 验证过的域名下的地址）和 `RADAR_EMAIL_TO`（多个用逗号分隔）。要 HTML 版需要 `pip install markdown`。
 
-## 在 agent 里用：两个 skill 和一个 MCP 服务器
+## 在 agent 里用：skill 和 MCP 服务器
 
 ### Skill
 
-`skills/` 里有两个 [Agent Skill](https://agentskills.io/home)，按工作本身的两段来拆：
+`skills/` 里有三个 [Agent Skill](https://agentskills.io/home)：一个把整件事做完，另外两个是拆开的两半，给想分开用的人。
 
 | Skill | 做什么 |
 |---|---|
+| `new-term-radar` | 一次跑完：今天的新名字，加上它们的关键词优先级表。也可以直接给它你已有的名字。从这个开始 |
 | `ai-listening` | 把各路信号最近 24 小时的新东西收集起来、去重，出一份名字报告 |
 | `seo-new-keywords-research` | 给它名字，或者一段提到这些名字的原始文本，它返回关键词优先级表：每个名字背后的通用词，经过筛选、估算规模并给出决策 |
 
@@ -195,7 +196,7 @@ python scripts/gsc_auth.py gsc_client.json   # 打开一次浏览器授权，写
 npx skills add zhuyansen/new-term-radar
 ```
 
-然后对你的 agent 说「出一份 AI listening 报告」或「给 PhotoCraft 和 SynthID Detector 做关键词调研」。skill 会在本机没有这个仓库时把它克隆到 `~/new-term-radar`，在任何付费运行之前先告诉你大概花多少，表不完整时也会说明。
+然后对你的 agent 说「今天有哪些 AI 新词」「出一份 AI listening 报告」或「给 PhotoCraft 和 SynthID Detector 做关键词调研」。skill 会在本机没有这个仓库时把它克隆到 `~/new-term-radar`，在任何付费运行之前先告诉你大概花多少，表不完整时也会说明。
 
 ### MCP 服务器
 

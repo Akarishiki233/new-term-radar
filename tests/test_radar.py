@@ -778,7 +778,7 @@ def test_mcp_tools_answer_and_never_print(cfg, tmp_path, monkeypatch, capsys):
 
 def test_skills_have_a_name_and_a_description():
     root = Path(__file__).resolve().parents[1] / "skills"
-    for name in ("ai-listening", "seo-new-keywords-research"):
+    for name in ("new-term-radar", "ai-listening", "seo-new-keywords-research"):
         text = (root / name / "SKILL.md").read_text()
         head = re.match(r"---\nname: (\S+)\ndescription: (.+)\n---\n", text)
         assert head and head.group(1) == name and 100 < len(head.group(2)) < 1024

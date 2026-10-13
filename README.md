@@ -187,14 +187,15 @@ python scripts/gsc_auth.py gsc_client.json   # opens a browser once, writes gsc_
 
 `--mail` sends the report through [Resend](https://resend.com). Set `RESEND_API_KEY`, `EMAIL_FROM` (an address on a domain you verified there) and `RADAR_EMAIL_TO` (comma-separated). `pip install markdown` for the HTML version.
 
-## Use it from an agent: two skills and an MCP server
+## Use it from an agent: skills and an MCP server
 
 ### Skills
 
-Two [Agent Skills](https://agentskills.io/home) live in `skills/`, split the way the work splits:
+Three [Agent Skills](https://agentskills.io/home) live in `skills/`: one that does the whole job, and the two halves for those who want them apart.
 
 | Skill | What it does |
 |---|---|
+| `new-term-radar` | The whole run: today's new names, then the keyword priority table for them. Also takes names you already have. Start here |
 | `ai-listening` | Collects what is new in the last 24 hours across the signals, deduplicated, as one report of names |
 | `seo-new-keywords-research` | Takes names, or raw text that mentions them, and returns the keyword priority table: the generic terms behind each name, screened, sized and given a decision |
 
@@ -202,7 +203,7 @@ Two [Agent Skills](https://agentskills.io/home) live in `skills/`, split the way
 npx skills add zhuyansen/new-term-radar
 ```
 
-Then ask your agent for "an AI listening report" or "keyword research on PhotoCraft and SynthID Detector". The skills clone this repository to `~/new-term-radar` if it is not there, tell you the cost before any paid run, and say when a table is incomplete.
+Then ask your agent for "today's new AI keywords", "an AI listening report" or "keyword research on PhotoCraft and SynthID Detector". The skills clone this repository to `~/new-term-radar` if it is not there, tell you the cost before any paid run, and say when a table is incomplete.
 
 ### MCP server
 

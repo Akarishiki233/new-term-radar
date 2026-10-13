@@ -96,6 +96,7 @@ T = {
     "uc_cosearch_item": ("{term} (with {name})", "{term}(和 {name} 一起)"),
     "uc_related_off": ("Related queries are off: set GOANYAPI_API_KEY to add what people searched together with each name.",
                        "相关查询未开启:设置 GOANYAPI_API_KEY 后,会加入大家和每个名字一起搜的词。"),
+    "uc_posts_err": ("The post search failed; this run used READMEs and related queries only: {why}", "推文搜索失败,这次只用了 README 和相关查询:{why}"),
     "uc_related_err": ("Related queries failed for: {names}.", "相关查询失败:{names}。"),
     "uc_geo_note": ("({geo}) = the curve was read from 30 days of daily data for that country (GoAnyAPI), settled to yesterday; a rise there is 1.5x the earlier level for three days. The other rows use the worldwide series.",
                     "({geo}) = 走势读自这个国家的 30 天日数据(GoAnyAPI),结算到昨天;在这份数据里,比之前高 50% 且持续三天算上涨。其余行用的是全球数据。"),

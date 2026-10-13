@@ -209,7 +209,7 @@ Then ask your agent for "an AI listening report" or "keyword research on PhotoCr
 For clients that speak MCP (Claude Code, Cursor, Claude Desktop):
 
 ```bash
-pip install "git+https://github.com/zhuyansen/new-term-radar#egg=new-term-radar[mcp]"
+pip install "new-term-radar[mcp] @ git+https://github.com/zhuyansen/new-term-radar"
 ```
 
 ```json

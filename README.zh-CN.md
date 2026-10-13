@@ -22,6 +22,8 @@
 
 ## 它读什么
 
+![雷达的流程：四类信号、名字判断、新词表、日报和 14 天复核](docs/radar.zh.gif)
+
 | 信号 | 抓什么 | 需要 | 花费 |
 |---|---|---|---|
 | ① X | 你关注的账号里，60 天内第一次出现的名字 | AIsa key | 每个账号每次 $0.003 |
@@ -214,6 +216,13 @@ python -m pytest -q tests
 ```
 
 测试覆盖逻辑部分（名字提取、打分、存储、报告），不访问网络。
+
+## 致谢
+
+- [子木 @CoderJeffLee](https://x.com/CoderJeffLee)：新词表的想法来自他的建议，新名字和它下游的通用词应该放在同一张表里，每行给出决策。
+- [饭特稀 | Fentix @fantexi997](https://x.com/fantexi997)：[GoAnyAPI](https://goanyapi.com)，相关查询和单个国家 Trends 走势这个可选数据源。
+
+流程图由 `docs/make_diagram.py` 生成（需要 `rsvg-convert` 和 `ffmpeg`）。
 
 ## 许可
 

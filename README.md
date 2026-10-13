@@ -22,25 +22,7 @@ One example it was built around: [Niko1221/Strata](https://github.com/Niko1221/S
 
 ## What it reads
 
-```mermaid
-flowchart LR
-  X["① X accounts you follow"] --> M
-  HF["① Hugging Face trending"] --> M
-  GH["② GitHub: one repo taking off"] --> M
-  SM["③ Sitemaps of other sites"] --> M
-  NS["③ New domains that already rank"] --> M
-  M["merge terms"] --> J{"name of a new thing,\nor a common word?"}
-  J -->|name| R["report + radar.db"]
-  J -->|common word| O["listed at the bottom"]
-  GSC["④ your Search Console\n(optional)"] --> R
-  R --> K["keyword table:\nthe generic terms behind the names"]
-  P["posts and README\nabout each name"] --> K
-  GA["Trends related queries,\nUS daily series\n(GoAnyAPI, optional)"] -.-> K
-  K --> R
-  R -->|14 days later| T["⑤ Google Trends check"]
-  T --> H["hit rate per signal"]
-  H --> R
-```
+![How the radar works: four signals, a name judge, the keyword table, a daily report and a 14-day check](docs/radar.en.gif)
 
 | Signal | What it catches | Needs | Cost |
 |---|---|---|---|
@@ -241,6 +223,13 @@ python -m pytest -q tests
 ```
 
 The tests cover the logic (name extraction, scoring, the store, the reports) and call no network.
+
+## Thanks
+
+- [子木 @CoderJeffLee](https://x.com/CoderJeffLee) for the idea behind the keyword table: a new name and the generic terms downstream of it belong in one table, each with a decision.
+- [饭特稀 | Fentix @fantexi997](https://x.com/fantexi997) for [GoAnyAPI](https://goanyapi.com), the optional source of related queries and one-country Trends series.
+
+The diagram is drawn by `docs/make_diagram.py` (needs `rsvg-convert` and `ffmpeg`).
 
 ## License
 

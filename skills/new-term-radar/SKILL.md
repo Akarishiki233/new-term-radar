@@ -37,6 +37,16 @@ Say the cost and the time before either command, and do not run `daily` twice in
 
 The first `daily` run on a machine only builds snapshots, so it reports GitHub breakouts and little else. Say so; do not present it as a quiet day.
 
+On Mondays (or with `--asks`) `daily` also reads what people asked for on Reddit that week (⑦, about 0.12 USD): jobs an AI tool could do, sized and checked for room on page one. With `--revenue` and a `TRUSTMRR_API_KEY` it reads the products people pay for (⑥).
+
+**The user wants to know what people complain about for a kind of tool** ("what's wrong with AI headshot tools?"):
+
+```bash
+python -m radar pains "ai headshot" --json
+```
+
+About 0.05 USD and a minute or two. It reads low-star Chrome Web Store reviews (needs `GOANYAPI_API_KEY`), Reddit complaints and comments under tutorial videos, and returns `gaps`: each with `gap`, `kind` (missing, too hard, quality, price, wants a tool), `count`, `phrase` (what someone with the problem would search) and `quotes` with links. Counts are of what was read, not of the market. App Store, Google Play and Trustpilot reviews are not reachable, and the radar does not read There's An AI For That or Facebook groups; say so if the user expects them.
+
 ## Read the result honestly
 
 From `report.json`: `leads` are the day's names (with `kinds`, `signals`, `named`, `examples`, `posts`), `keywords` is the keyword table (`rows`, `tails`, `cosearch`, and the error fields). From `keywords --json` the table is the whole output.

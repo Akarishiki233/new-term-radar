@@ -19,6 +19,8 @@ def english(monkeypatch):
     monkeypatch.setattr(aisa, "_post", no_paid_calls)
     # The page-one check runs only in the tests that set it up, whatever loads the config (the MCP server too).
     monkeypatch.setitem(config.DEFAULTS["competition"], "max_rows", 0)
+    monkeypatch.setitem(config.DEFAULTS["asks"], "weekday", None)          # weekly signals stay off unless a test asks
+    monkeypatch.setitem(config.DEFAULTS["tutorials"], "max_leads", 0)
 
 
 @pytest.fixture

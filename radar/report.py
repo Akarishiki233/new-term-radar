@@ -10,7 +10,7 @@ SHOWN = 20
 OTHER_TERMS = 15
 POSTS_SHOWN = 3   # posts quoted in full per term
 # signal key -> label key, in the order of how early the signal comes
-KINDS = ["x", "hf", "breakout", "sitemap", "newsite", "revenue", "usecase", "cosearch", "watch"]
+KINDS = ["x", "hf", "breakout", "sitemap", "newsite", "revenue", "ask", "usecase", "cosearch", "watch"]
 
 
 def leads(cfg: dict, blocks: dict[str, dict]) -> tuple[list[dict], dict]:
@@ -134,6 +134,64 @@ def _revenue_lines(rv: dict, cfg: dict) -> list[str]:
     return lines + ["", t("revenue_tos")]
 
 
+def _asks_lines(ak: dict, cfg: dict) -> list[str]:
+    if ak.get("skipped"):
+        return []
+    lines = ["", t("asks_h"), ""]
+    rows, quiet = ak.get("rows") or [], ak.get("quiet") or []
+    if not rows and not quiet:
+        return lines + [t("recent_none", why=ak.get("error") or t("asks_none", read=ak.get("read", 0), asks=ak.get("asks", 0)))]
+    lines += [t("asks_intro", read=ak["read"], asks=ak["asks"], unsized=ak["unsized"], min=cfg["asks"]["min_volume"])]
+    if rows:
+        lines += ["", t("asks_cols"), "|---|---|---|---|---|---|"]
+    for row in rows:
+        p = max(row["posts"], key=lambda x: x["score"])
+        lines.append(f"| **{row['phrase']}**{t('asks_again') if row.get('again') else ''} | {len(row['posts'])} ({row['score']}) | "
+                     f"{', '.join('r/' + s for s in row['subreddits'][:3])} | {row['volume']:,} | {_page_one(row.get('competition'))} | "
+                     f"[{_cell(p['title'][:70])}]({p['url']}) |")
+    if quiet:
+        lines += ["", t("asks_quiet_h", min=cfg["asks"]["min_volume"]), "", t("asks_quiet_cols"), "|---|---|---|---|"]
+        for row in quiet:
+            p = max(row["posts"], key=lambda x: x["score"])
+            lines.append(f"| {row['phrase']} | {len(row['posts'])} ({row['score']}) | {', '.join('r/' + s for s in row['subreddits'][:3])} | "
+                         f"[{_cell(p['title'][:80])}]({p['url']}) |")
+    if ak.get("errors"):
+        lines.append(t("asks_err", why="; ".join(ak["errors"][:3])))
+    return lines + ["", t("asks_note")]
+
+
+def _tutorial_lines(tu: dict) -> list[str]:
+    if tu.get("skipped") or not (tu.get("leads") or tu.get("errors")):
+        return []
+    lines = ["", t("tut_h"), ""]
+    for lead in tu.get("leads") or []:
+        lines.append(t("tut_lead", term=lead["term"], n=lead["comments"]))
+        lines += [f"  - {g['gap']} ({t('gap_' + g['kind'].replace(' ', '_'))}, {g['count']}){' → ' + g['phrase'] if g['phrase'] else ''}"
+                  for g in lead["gaps"]]
+    if tu.get("errors"):
+        lines.append(t("tut_err", why="; ".join(tu["errors"][:3])))
+    return lines
+
+
+def pains(result: dict) -> str:
+    """The `pains` command: the gaps people point at for a kind of tool."""
+    by = result["by_source"]
+    lines = [t("pains_h", keyword=result["keyword"]), "",
+             t("pains_src", chrome=by["chrome"], reddit=by["reddit"], youtube=by["youtube"]), ""]
+    if result["gaps"]:
+        lines += [t("pains_cols"), "|---|---|---|---|---|"]
+        for g in result["gaps"]:
+            q = g["quotes"][0]
+            lines.append(f"| {_cell(g['gap'])} | {t('gap_' + g['kind'].replace(' ', '_'))} | {g['count']} | {g['phrase'] or t('dash')} | "
+                         f"[{_cell(q['text'][:90])}]({q['url']}) |")
+    else:
+        lines.append(t("pains_none"))
+    if result["errors"]:
+        lines += ["", t("pains_err", why="; ".join(result["errors"][:4]))]
+    lines += ["", t("pains_note"), t("cost", cost=_cost(result))]
+    return "\n".join(lines) + "\n"
+
+
 def _gsc_lines(gsc: dict) -> list[str]:
     if gsc.get("off"):
         return []
@@ -176,6 +234,9 @@ def _status_lines(b: dict[str, dict], extra: dict[str, dict]) -> list[str]:
     ok = "" if bo.get("error") or bo.get("skipped") else t("st_breakout_ok", n=bo["searched"]) + \
         (t("st_breakout_first") if bo.get("first_run") else "")
     lines.append(t("st_breakout", state=_state(bo, ok)))
+    ak = b.get("ask", {"skipped": True})
+    if not ak.get("skipped"):
+        lines.append(t("st_asks", state=_state(ak, "" if ak.get("error") else t("st_asks_ok", read=ak["read"], asks=ak["asks"]))))
     rv = b.get("revenue", {"skipped": True})
     if not rv.get("skipped") or rv.get("no_key"):
         ok = t("revenue_nokey_short") if rv.get("no_key") else "" if rv.get("error") else t("st_revenue_ok", n=rv["read"]) + \
@@ -214,10 +275,13 @@ def daily(cfg: dict, lead: list[dict], b: dict[str, dict], gsc: dict, rev: dict,
     lines += _breakout_lines(b["breakout"], cfg)
     lines += _new_site_lines(b.get("newsite", {"skipped": True}), cfg)
     lines += _revenue_lines(b.get("revenue", {"skipped": True}), cfg)
+    lines += _asks_lines(b.get("ask", {"skipped": True}), cfg)
+    lines += _tutorial_lines(extra.get("tutorials", {"skipped": True}))
     lines += _gsc_lines(gsc)
     lines += _review_lines(cfg, rev, summ)
     lines += _status_lines(b, extra)
-    lines.append(t("cost", cost=_cost(b["x"], rev, b.get("newsite", {}), extra.get("usecases", {}))))
+    lines.append(t("cost", cost=_cost(b["x"], rev, b.get("newsite", {}), b.get("ask", {}), extra.get("usecases", {}),
+                                      extra.get("tutorials", {}))))
     return "\n".join(lines) + "\n"
 
 
@@ -232,6 +296,10 @@ def _page_one(comp: dict | None) -> str:
         bits.append(t("pc_kd", kd=comp["kd"]))
     if comp.get("ads"):
         bits.append(t("pc_ads"))
+    if comp.get("built") is not None:
+        bits.append(t("pc_built", n=f"{comp['built']:,}"))
+    if comp.get("paid"):
+        bits.append(t("pc_paid", n=len(comp["paid"])))
     return " · ".join(bits)
 
 
@@ -249,7 +317,8 @@ def _page_one_lines(cfg: dict, uc: dict) -> list[str]:
             w, kinds = r["competition"]["weakest"], r["competition"]["kinds"]
             key = "pc_weakest" if w["dr"] < cfg["competition"]["weak_dr"] else "pc_weakest_strong"
             lines.append(t(key, phrase=r["phrase"], domain=w["domain"], dr=w["dr"], pos=w["position"],
-                           kinds=", ".join(f"{t('pk_' + k)} {n}" for k, n in sorted(kinds.items(), key=lambda x: -x[1]))))
+                           kinds=", ".join(f"{t('pk_' + k)} {n}" for k, n in sorted(kinds.items(), key=lambda x: -x[1])))
+                         + (t("pc_paid_who", who=", ".join(r["competition"]["paid"][:3])) if r["competition"].get("paid") else ""))
     if uc.get("competition_errors"):
         lines.append(t("pc_err", names="; ".join(uc["competition_errors"])))
     return lines

@@ -10,12 +10,14 @@ Signals:
   ③ sitemaps  pages other sites added since the last run
   ③ newsites  domains registered in the last 90 days that already rank (weekly; AIsa)
   ⑥ revenue   products people pay for, growing fastest or newly listed (weekly; TrustMRR key)
+  ⑦ asks      what people ask for on Reddit ("is there an AI tool that…"), sized (weekly; AIsa)
   ④ gsc       queries your own site got impressions for, for the first time (optional)
   ⑤ review    leads from 14 days ago checked in Google Trends; hit rate per signal (AIsa)
   usecases    the generic terms behind today's names, sized against a benchmark keyword (AIsa)
 
   python -m radar keywords "name one" "name two" [--repo "name one=owner/repo"] [--json]
   python -m radar leads    [--days 7] [--json]
+  python -m radar pains    "keyword" [--extension ID] [--json]   what people complain about for a kind of tool
   python -m radar mcp      the MCP server on stdio (needs the `mcp` package)
 
 `keywords` builds the keyword table for names you give it, now (about $0.05 a name plus
@@ -37,10 +39,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import breakout, config, gsc, new_sites, notify, report, review, revenue, sitemaps, sources, store, usecases
+from . import asks, breakout, config, gsc, new_sites, notify, pains, report, review, revenue, sitemaps, sources, store, usecases
 from .i18n import t
 
-SKIPPABLE = {"x", "hf", "breakout", "sitemaps", "newsites", "revenue", "gsc", "review", "judge", "usecases"}
+SKIPPABLE = {"x", "hf", "breakout", "sitemaps", "newsites", "revenue", "asks", "gsc", "review", "judge", "usecases", "tutorials"}
 
 
 def run(fn, skip: bool = False) -> dict:
@@ -85,11 +87,16 @@ def cmd_daily(args, cfg: dict, state: Path) -> int:
         "newsite": run(lambda: new_sites.new_sites(cfg, state), "newsites" in args.skip or not weekly),
         "revenue": run(lambda: revenue.products(cfg, state), "revenue" in args.skip or not (
             args.revenue or date.today().weekday() == cfg["revenue"]["weekday"])),
+        "ask": run(lambda: asks.asks(cfg, state), "asks" in args.skip or not (
+            args.asks or date.today().weekday() == cfg["asks"]["weekday"])),
     }
     found = run(lambda: gsc.gsc_new(cfg), "gsc" in args.skip)
     lead, judged = report.leads(cfg, blocks)
     conn = store.connect(state)
     extra = {"judge": judged, "record": run(lambda: {"recorded": store.record(conn, report.to_record(cfg, lead))})}
+    # What the viewers of a widely shared walkthrough ask for: the one-click tool behind a ⚡ lead.
+    extra["tutorials"] = run(lambda: pains.tutorial_asks(cfg, report.named(cfg, lead)),
+                             "tutorials" in args.skip or not cfg["tutorials"]["max_leads"])
     # With ① run apart, the daily report lists what that job kept since yesterday.
     extra["recent_sources"] = run(lambda: {"rows": store.recent_sources(conn)}, not {"x", "hf"} <= args.skip)
     # The names to read for their generic terms: things, not words that surged (usecases.names_to_read).
@@ -130,6 +137,18 @@ def cmd_keywords(args, cfg: dict, state: Path) -> int:
     return 0
 
 
+def cmd_pains(args, cfg: dict) -> int:
+    keyword = " ".join(args.names).strip()
+    if not keyword:
+        raise SystemExit('pains: give a keyword, e.g. python -m radar pains "ai headshot"')
+    result = pains.run(cfg, keyword, args.extension)
+    out = json.dumps(result, ensure_ascii=False, indent=1, default=str) if args.json else report.pains(result)
+    if args.out:
+        Path(args.out).write_text(out)
+    print(out)
+    return 0
+
+
 def cmd_leads(args, state: Path) -> int:
     data = kept_leads(state, args.days)
     if args.json:
@@ -161,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         return serve_mcp()
     prog = "python -m radar" if __package__ == "radar" else "new-term-radar"  # installed, the package has another name
     p = argparse.ArgumentParser(prog=prog, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["daily", "sources", "keywords", "leads"])
+    p.add_argument("command", choices=["daily", "sources", "keywords", "leads", "pains"])
     p.add_argument("names", nargs="*", help="for `keywords`: the names to read")
     p.add_argument("--repo", action="append", default=[], metavar="NAME=OWNER/REPO", help="for `keywords`: a name's GitHub repository")
     p.add_argument("--days", type=int, default=7, help="for `leads`: how far back")
@@ -172,6 +191,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--skip", default="", help="comma-separated: " + ",".join(sorted(SKIPPABLE)))
     p.add_argument("--new-sites", action="store_true", help="run the weekly new-site signal today")
     p.add_argument("--revenue", action="store_true", help="run the weekly revenue signal today (needs TRUSTMRR_API_KEY)")
+    p.add_argument("--asks", action="store_true", help="run the weekly Reddit asks signal today")
+    p.add_argument("--extension", action="append", default=[], metavar="ID", help="for `pains`: a Chrome extension to read the reviews of")
     p.add_argument("--mail", action="store_true", help="mail the report (see radar/notify.py)")
     args = p.parse_args(argv)
     args.skip = {s for s in args.skip.split(",") if s}
@@ -189,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
     state.mkdir(parents=True, exist_ok=True)
     if args.command == "keywords":
         return cmd_keywords(args, cfg, state)
+    if args.command == "pains":
+        return cmd_pains(args, cfg)
     return cmd_sources(args, cfg, state) if args.command == "sources" else cmd_daily(args, cfg, state)
 
 

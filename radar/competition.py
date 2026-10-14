@@ -8,7 +8,10 @@ a run, this reads:
   hold it, and whether ads show (someone pays for that click: there is money in the term);
 - the rating of each site there (GoAnyAPI, $0.002 a site, kept 30 days): `weak` counts the
   results on sites rated under 30, the slots a new site can take, and the weakest one is named;
-- keyword difficulty (DataForSEO Labs, about $0.012 a call; often missing for a new term).
+- keyword difficulty (DataForSEO Labs, about $0.012 a call; often missing for a new term);
+- with a GoAnyAPI key, who already builds for the term and who pays for it: how many pages
+  Google holds with the term in their title from the last month (`built`, 4 credits) and the
+  domains running Google ads on it (`paid`, Ads transparency, 4 credits).
 
 `open`: three or more weak results, or difficulty under 20. `crowded`: no weak result and a
 difficulty of 40 or more, or unknown. `mixed` in between. A crowded `prioritize` becomes
@@ -90,6 +93,28 @@ def ratings(domains: list[str], state: Path) -> tuple[dict[str, int | None], int
     return {d: v["dr"] for d, v in fresh.items()}, cost
 
 
+def supply(rows: list[dict]) -> tuple[int, list[str]]:
+    """Adds `built` (pages titled with the term this month) and `paid` (domains advertising on it)."""
+    if not goanyapi.key() or not rows:
+        return 0, []
+
+    def one(r: dict):
+        out, cost, errors = {}, 0, []
+        for field, fn in (("built", goanyapi.intitle), ("paid", goanyapi.advertisers)):
+            try:
+                out[field], spent = fn(r["phrase"])
+                cost += spent
+            except goanyapi.GoAnyError as exc:
+                errors.append(f"{r['phrase']} ({field}): {exc}")
+        return r, out, cost, errors
+    total, errors = 0, []
+    with ThreadPoolExecutor(WORKERS) as pool:
+        for r, out, cost, errs in pool.map(one, rows):
+            r["competition"].update(out)
+            total, errors = total + cost, errors + errs
+    return total, errors
+
+
 def verdict(weak: int | None, kd: int | None) -> str:
     if (weak is not None and weak >= 3) or (kd is not None and kd < 20):
         return "open"
@@ -137,4 +162,5 @@ def assess(rows: list[dict], cfg: dict, state: Path) -> tuple[int, list[str]]:
                             "weakest": {k: weakest[k] for k in ("domain", "dr", "position", "url")} if weakest else None}
         if r["decision"] == "prioritize" and r["competition"]["verdict"] == "crowded":
             r["decision"], r["demoted"] = "watch", True
-    return cost, errors
+    spent, failed = supply([r for r in picked if r.get("competition")])
+    return cost + spent, errors + failed

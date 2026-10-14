@@ -907,7 +907,15 @@ def test_a_crowded_rising_term_is_watched_not_prioritized(cfg, tmp_path, monkeyp
     monkeypatch.setattr(competition.aisa, "call", call)
     rated = {"canva.com": 94, "adobe.com": 96, "tiny1.ai": 8, "tiny2.ai": 12, "tiny3.ai": 21}
     asked = []
-    monkeypatch.setattr(competition.goanyapi, "call", lambda path, domain: (asked.append(domain) or {"domain_rating": rated[domain]}, 2000))
+
+    def goany(path, **p):
+        if path == "dr":
+            asked.append(p["domain"])
+            return {"domain_rating": rated[p["domain"]]}, 2000
+        if path == "google-intitle":
+            return {"intitleCount": 19500}, 4000
+        return {"domains": ["paid.example"] if p["keyword"] == "crowded term" else [], "advertisers": []}, 4000
+    monkeypatch.setattr(competition.goanyapi, "call", goany)
     rows = [{"phrase": "crowded term", "decision": "prioritize"}, {"phrase": "open term", "decision": "prioritize"},
             {"phrase": "faded", "decision": "skip"}]
     cost, errors = competition.assess(rows, cfg, tmp_path)
@@ -916,14 +924,16 @@ def test_a_crowded_rising_term_is_watched_not_prioritized(cfg, tmp_path, monkeyp
     assert crowded["competition"]["verdict"] == "crowded" and crowded["competition"]["weak"] == 0
     assert opened["decision"] == "prioritize" and opened["competition"]["weak"] == 3
     assert opened["competition"]["weakest"] == {"domain": "tiny1.ai", "dr": 8, "position": 3, "url": "https://tiny1.ai/"}
-    assert "competition" not in faded and errors == [] and cost == 2 * 2000 + 12000 + 5 * 2000
+    assert "competition" not in faded and errors == [] and cost == 2 * 2000 + 12000 + 5 * 2000 + 2 * (4000 + 4000)
+    assert crowded["competition"]["built"] == 19500 and crowded["competition"]["paid"] == ["paid.example"]
     competition.assess([{"phrase": "open term", "decision": "watch"}], cfg, tmp_path)
     assert len(asked) == 5                                    # ratings are kept 30 days, not bought again
     uc = {"names": ["x"], "rows": [dict(r, kind="generic", names=["x"], brand=False, new=True, now="rising", peak_day="2026-10-10",
                                        evidence="") for r in rows[:2]],
           "proposed": 2, "relevant": 2, "kept": 2, "benchmark": "gpts", "volume_month": "2026-08", "related": True}
     text = "\n".join(report.keyword_table(cfg, uc))
-    assert "crowded · 0 weak · KD 60 · ads" in text and "watch ↓" in text and "open · 3 weak · KD 25" in text
+    assert "crowded · 0 weak · KD 60 · ads · 19,500 pages built · 1 advertisers" in text and "watch ↓" in text
+    assert "open · 3 weak · KD 25 · 19,500 pages built |" in text and "advertising on it: paid.example" in text
     assert "tiny1.ai (rated 8) at #3" in text and "Page one: open = three or more" in text
     assert "**crowded term**: no easy slot, even the weakest, canva.com, is rated 94 (#1)" in text
 
@@ -1002,3 +1012,76 @@ def test_leads_carry_format_marks_and_the_legend(cfg, monkeypatch):
     lead, _ = report.leads(cfg, blocks)
     assert lead[0]["format"] == "video" and lead[0]["one_click"] == "tutorial"
     assert report._marks(lead[0]) == " 🎬 ⚡"
+
+
+
+# --- ⑦ asks, pains and tutorial comments ---------------------------------------------------------
+
+from radar import asks, pains  # noqa: E402
+
+
+def _reddit_post(pid, title, score=12, sub="VideoEditors"):
+    return {"id": pid, "title": title, "text": "", "score": score, "comments": 3, "subreddit": sub,
+            "url": f"https://www.reddit.com/r/{sub}/{pid}", "created": 0}
+
+
+def test_asks_turns_reddit_requests_into_sized_jobs(cfg, tmp_path, monkeypatch):
+    cfg["asks"]["patterns"] = ['"is there an ai tool"', '"how do i automate"']
+    posts = {'"is there an ai tool"': [_reddit_post("a", "Is there an AI tool to add b-roll automatically?", 45),
+                                       _reddit_post("b", "Any AI that turns slides into notes?", 35, "college"),
+                                       _reddit_post("c", "Rate my setup", 1)],
+             '"how do i automate"': [_reddit_post("a", "Is there an AI tool to add b-roll automatically?", 45)]}
+    monkeypatch.setattr(asks.social, "reddit", lambda q, **k: (posts[q], 1880))
+    monkeypatch.setattr(asks.aisa, "chat", lambda model, system, user: json.dumps(
+        [{"i": i, "kind": "request", "job": job, "ai": True} for i, job in enumerate(
+            ["add b roll automatically", "convert slides to notes"])]))
+    monkeypatch.setattr(asks.usecases, "volumes", lambda phrases, loc: (
+        {"add b roll automatically": {"volume": 880}, "convert slides to notes": {"volume": 10}}, 90000))
+    first = asks.asks(cfg, tmp_path)
+    assert first["read"] == 2 and first["asks"] == 2 and first["unsized"] == 1          # "rate my setup" scored under the floor
+    assert [r["phrase"] for r in first["rows"]] == ["add b roll automatically"] and first["cost_micros"] == 2 * 1880 + 90000
+    assert first["terms"][0]["note"] == "Reddit: asked 1× (r/VideoEditors)"
+    assert [q["phrase"] for q in first["quiet"]] == ["convert slides to notes"]           # asked, too few searches yet
+    text = "\n".join(report._asks_lines(first, cfg))
+    assert "| **add b roll automatically** | 1 (45) | r/VideoEditors | 880 |" in text and "do not republish" in text
+    assert "| convert slides to notes | 1 (35) | r/college |" in text and "ideas rather than keywords" in text
+    again = asks.asks(cfg, tmp_path)
+    assert again["rows"][0]["again"] and again["terms"] == []                            # reported once
+
+
+def test_pains_groups_reviews_posts_and_comments_into_gaps(cfg, monkeypatch):
+    monkeypatch.setenv("GOANYAPI_API_KEY", "k")
+    ext = "a" * 32
+
+    def serp(q, gl="US"):
+        if q.startswith("site:chromewebstore"):
+            return [{"url": f"https://chromewebstore.google.com/detail/headshot-ai/{ext}", "title": "x", "rank": 1}], 2000
+        return [{"url": "https://www.youtube.com/watch?v=abcdefghijk", "title": "tutorial", "rank": 1}], 2000
+    monkeypatch.setattr(pains.goanyapi, "serp", serp)
+    monkeypatch.setattr(pains.goanyapi, "chrome_reviews", lambda e, c="": (
+        [{"rating": 1, "text": "Needs a photo of your face, no way to upload a group shot", "date": "2026-10-13"},
+         {"rating": 5, "text": "Great!", "date": "2026-10-12"}], "", 3000))
+    monkeypatch.setattr(pains.social, "reddit", lambda q, **k: ([_reddit_post("r1", "Headshot apps all look plastic")], 1880))
+    monkeypatch.setattr(pains.social, "youtube_comments", lambda vid: ([{"text": "Is there a way to do this for a whole team at once?", "likes": 40},
+                                                                        {"text": "nice", "likes": 0}], 1000))
+    monkeypatch.setattr(pains.aisa, "chat", lambda model, system, user, max_tokens=2500: json.dumps([
+        {"gap": "No team or group headshots", "kind": "missing", "items": [0, 2], "phrase": "ai headshots for teams"},
+        {"gap": "Results look plastic", "kind": "quality", "items": [1]}]))
+    result = pains.run(cfg, "ai headshot")
+    assert result["by_source"] == {"chrome": 1, "reddit": 1, "youtube": 1}           # 5 stars, "nice" and repeats are left out
+    assert result["gaps"][0]["count"] == 2 and result["gaps"][0]["sources"] == ["chrome", "youtube"]
+    text = report.pains(result)
+    assert "| No team or group headshots | missing | 2 | ai headshots for teams |" in text and "Trustpilot" in text
+
+
+def test_tutorial_asks_only_for_leads_marked_one_click(cfg, monkeypatch):
+    cfg["tutorials"]["max_leads"] = 3
+    monkeypatch.setenv("GOANYAPI_API_KEY", "k")
+    monkeypatch.setattr(pains.goanyapi, "serp", lambda q, gl="US": ([{"url": "https://www.youtube.com/watch?v=abcdefghijk", "title": "t", "rank": 1}], 2000))
+    monkeypatch.setattr(pains.social, "youtube_comments", lambda vid: ([{"text": "Can someone make this one click? Too many steps", "likes": 12}], 1000))
+    monkeypatch.setattr(pains.aisa, "chat", lambda model, system, user, max_tokens=2500: json.dumps(
+        [{"gap": "Too many manual steps", "kind": "wants a tool", "items": [0], "phrase": "one click blender export"}]))
+    out = pains.tutorial_asks(cfg, [{"term": "opus blender game", "one_click": "tutorial"}, {"term": "plain", "one_click": None}])
+    assert [x["term"] for x in out["leads"]] == ["opus blender game"] and out["cost_micros"] == 2000 + 1000
+    text = "\n".join(report._tutorial_lines(out))
+    assert "Too many manual steps (wants a tool, 1) → one click blender export" in text

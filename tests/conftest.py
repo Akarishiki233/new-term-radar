@@ -17,6 +17,8 @@ def english(monkeypatch):
     def no_paid_calls(*a, **k):       # a key on the machine must never turn a test into a paid call
         raise aisa.AisaError("no network in tests")
     monkeypatch.setattr(aisa, "_post", no_paid_calls)
+    # The page-one check runs only in the tests that set it up, whatever loads the config (the MCP server too).
+    monkeypatch.setitem(config.DEFAULTS["competition"], "max_rows", 0)
 
 
 @pytest.fixture

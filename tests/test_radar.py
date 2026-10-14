@@ -925,6 +925,7 @@ def test_a_crowded_rising_term_is_watched_not_prioritized(cfg, tmp_path, monkeyp
     text = "\n".join(report.keyword_table(cfg, uc))
     assert "crowded · 0 weak · KD 60 · ads" in text and "watch ↓" in text and "open · 3 weak · KD 25" in text
     assert "tiny1.ai (rated 8) at #3" in text and "Page one: open = three or more" in text
+    assert "**crowded term**: no easy slot, even the weakest, canva.com, is rated 94 (#1)" in text
 
 
 

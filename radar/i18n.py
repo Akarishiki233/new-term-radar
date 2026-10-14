@@ -106,6 +106,8 @@ T = {
                 "首页竞争:能进 = 前十里有 3 个以上评分低于 {dr} 的站,或关键词难度低于 20;挤满 = 一个弱站都没有、难度 40 以上(或未知);其余为一般。↓ = 还在涨,但首页被强站占满,从优先降为观察。有广告 = 有人花钱买这个点击。评分来自 GoAnyAPI,难度和结果来自 DataForSEO。"),
     "pc_weakest_h": ("Weakest site on page one (where a new page can get in):", "首页最弱的站(新页面最容易挤进去的位置):"),
     "pc_weakest": ("- **{phrase}**: {domain} (rated {dr}) at #{pos}; page one: {kinds}", "- **{phrase}**:{domain}(评分 {dr})排第 {pos};首页构成:{kinds}"),
+    "pc_weakest_strong": ("- **{phrase}**: no easy slot, even the weakest, {domain}, is rated {dr} (#{pos}); page one: {kinds}",
+                          "- **{phrase}**:没有容易的位置,最弱的 {domain} 评分也有 {dr}(第 {pos});首页构成:{kinds}"),
     "pc_err": ("Page-one check failed for: {names}.", "首页竞争查询失败:{names}。"),
     "pc_no_dr": ("No GOANYAPI_API_KEY: page one is judged by keyword difficulty alone, without the sites' ratings.",
                  "没有 GOANYAPI_API_KEY:首页竞争只看关键词难度,没有各站评分。"),

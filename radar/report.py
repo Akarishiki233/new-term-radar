@@ -247,7 +247,8 @@ def _page_one_lines(cfg: dict, uc: dict) -> list[str]:
         lines += ["", t("pc_weakest_h")]
         for r in weakest:
             w, kinds = r["competition"]["weakest"], r["competition"]["kinds"]
-            lines.append(t("pc_weakest", phrase=r["phrase"], domain=w["domain"], dr=w["dr"], pos=w["position"],
+            key = "pc_weakest" if w["dr"] < cfg["competition"]["weak_dr"] else "pc_weakest_strong"
+            lines.append(t(key, phrase=r["phrase"], domain=w["domain"], dr=w["dr"], pos=w["position"],
                            kinds=", ".join(f"{t('pk_' + k)} {n}" for k, n in sorted(kinds.items(), key=lambda x: -x[1]))))
     if uc.get("competition_errors"):
         lines.append(t("pc_err", names="; ".join(uc["competition_errors"])))

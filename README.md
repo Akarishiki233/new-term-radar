@@ -22,7 +22,9 @@ One example it was built around: [Niko1221/Strata](https://github.com/Niko1221/S
 
 ## What it reads
 
-![How the radar works: four signals, a name judge, the keyword table, a daily report and a 14-day check; used from the command line, three Agent Skills or an MCP server](docs/radar.en.gif)
+![How the radar works: six signals, a name judge, the keyword table with its page-one check, a daily report and a 14-day check; used from the command line, three Agent Skills, an MCP server or the pains command. What 0.3 and 0.4 added is purple and tagged NEW](docs/radar.en.gif)
+
+Purple, tagged NEW: what 0.3 and 0.4 added (⑥ revenue, ⑦ Reddit asks, the page-one check, the format and ⚡ marks, the `pains` command).
 
 | Signal | What it catches | Needs | Cost |
 |---|---|---|---|

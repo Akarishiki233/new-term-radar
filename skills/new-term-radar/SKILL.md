@@ -11,8 +11,9 @@ The whole job in one run: collect what is new, then work out which keywords are 
 
 1. Find the radar: `$NEW_TERM_RADAR_DIR` if set, else `~/new-term-radar`; clone https://github.com/zhuyansen/new-term-radar there if missing. Run every command from that directory. Python 3.10 or newer; nothing to install.
 2. An AIsa key must be available, as `AISA_API_KEY` or from the AIsa CLI (`aisa login` stores it in `~/.aisa`): the X posts, the search volumes, Google Trends and the models all go through it. Without it, stop and say so. A key comes from https://go.aisa.one/yansen-zhu.
-3. `GOANYAPI_API_KEY` is optional (a key comes from https://goanyapi.com/r/ga-95708898fb). With it the table also holds what people really searched together with each name, and reads the bigger rows from one country's settled series. Without it, tell the user a "flat" reading is weaker evidence.
-4. If there is no `config.json`, copy `config.example.json` and tell the user they are on the example list of X accounts and sitemaps.
+3. `TRUSTMRR_API_KEY` is optional: with it the weekly ⑥ revenue signal reads the products people pay for that grow fastest (TrustMRR). Its leads are for the user's own research: TrustMRR's terms forbid republishing the data, so never paste the product list into anything public.
+4. `GOANYAPI_API_KEY` is optional (a key comes from https://goanyapi.com/r/ga-95708898fb). With it the table also holds what people really searched together with each name, and reads the bigger rows from one country's settled series. Without it, tell the user a "flat" reading is weaker evidence.
+5. If there is no `config.json`, copy `config.example.json` and tell the user they are on the example list of X accounts and sitemaps.
 
 ## Choose the path
 
@@ -55,9 +56,10 @@ Each table row: `phrase`, `kind` (`name` or `generic`), `names` (the name it sit
 1. **Today's new names** (skip this part on the names-given path): strongest first, each with what it is in a few words from the examples, where it was seen with the number that shows its strength, and one link.
 2. **The priority table**, sorted prioritize, watch, skip:
 
-   | Keyword | Type | Behind | New? | Est. searches/day | Started rising | Momentum (7d) | Now | Decision | Why |
+   | Keyword | Type | Behind | New? | Est. searches/day | Started rising | Momentum (7d) | Now | Page one | Decision | Why |
 
    Use the radar's `decision` and add one short reason per row from the fields above.
+   `competition` (rows that would be acted on): `verdict` open, mixed or crowded; `weak` = page-one results on sites rated under 30, the slots a new site can take; `kd`; `ads`; `weakest` (the site a new page can push past). A row with `demoted` was rising but moved to watch because page one is crowded: say so. In a name's first week page one is still forming; trust the second reading.
 3. **Under the table**: each name's long-tails (`tails`), other names found alongside (`cosearch`), then every caveat that applies: missing key, failed source, first run, estimate quality.
 4. **Two or three lines of advice**: which rows are worth a page or a tool now, and what to look at again in a few days. Search volume data runs about two months behind; say so if the user is about to commit work to a number.
 

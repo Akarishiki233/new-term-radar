@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import re
 
-from . import config, judge, usecases
+from . import opportunity, config, judge, usecases
 from .i18n import t
 
 SHOWN = 20
 OTHER_TERMS = 15
 POSTS_SHOWN = 3   # posts quoted in full per term
 # signal key -> label key, in the order of how early the signal comes
-KINDS = ["x", "hf", "breakout", "sitemap", "newsite", "usecase", "cosearch", "watch"]
+KINDS = ["x", "hf", "breakout", "sitemap", "newsite", "revenue", "usecase", "cosearch", "watch"]
 
 
 def leads(cfg: dict, blocks: dict[str, dict]) -> tuple[list[dict], dict]:
@@ -27,14 +27,17 @@ def leads(cfg: dict, blocks: dict[str, dict]) -> tuple[list[dict], dict]:
             row["variants"] += [v for v in r.get("variants", []) if v not in row["variants"]]
             if r.get("repo"):
                 row["repo"] = r["repo"]
+            if r.get("about"):
+                row["about"] = r["about"]
     rows = list(out.values())
     for r in rows:
         r["known"] = config.known(cfg, r["term"])
+        opportunity.tag(r)
     status = judge.score(rows, cfg["judge"]["model"]) if rows else {"judged": 0}
     cut = cfg["judge"]["min_score"]
     # Earliest signal first among equals: a name the labs said today beats a sitemap echo.
     rows.sort(key=lambda r: (-(r.get("named", 0) >= cut), -len(r["kinds"]),
-                             min(KINDS.index(k) for k in r["kinds"]), -r.get("named", 0)))
+                             min(KINDS.index(k) for k in r["kinds"]), opportunity.RANK[r["format"]], -r.get("named", 0)))
     return rows, status
 
 
@@ -46,6 +49,14 @@ def named(cfg: dict, lead: list[dict]) -> list[dict]:
 
 def to_record(cfg: dict, lead: list[dict]) -> list[dict]:
     return [r for r in named(cfg, lead)[:SHOWN] if not r["known"]]
+
+
+MARK = {"video": " 🎬", "voice": " 🎙", "image": " 🖼", "text": ""}
+
+
+def _marks(r: dict) -> str:
+    """What the thing makes, and ⚡ when a widely shared tutorial or trend shows a manual workflow."""
+    return MARK.get(r.get("format", "text"), "") + (" ⚡" if r.get("one_click") else "")
 
 
 def _cell(text: str) -> str:
@@ -106,6 +117,23 @@ def _new_site_lines(ns: dict, cfg: dict) -> list[str]:
                     f"{r['etv']} | {r['keywords']} |" for r in sites]
 
 
+def _revenue_lines(rv: dict, cfg: dict) -> list[str]:
+    if rv.get("skipped") and not rv.get("no_key"):
+        return []
+    lines = ["", t("revenue_h", usd=cfg["revenue"]["min_revenue_usd"]), ""]
+    if rv.get("no_key"):
+        return lines + [t("revenue_nokey")]
+    rows = rv.get("products") or []
+    if not rows:
+        return lines + [t("recent_none", why=rv.get("error") or t("revenue_none"))]
+    lines += [t("revenue_cols"), "|---|---|---|---|---|"]
+    for p in rows:
+        came = t("revenue_zero") if p["from_zero"] else ", ".join(t("revenue_" + c.split("-")[0]) for c in p["came"])
+        site = f"[{p['name']}]({p['website']})" if p["website"] else p["name"]
+        lines.append(f"| {site} | {_cell(p['about'][:110]) or t('dash')} | ${p['usd']:,} | {p['growth_text']} | {came} |")
+    return lines + ["", t("revenue_tos")]
+
+
 def _gsc_lines(gsc: dict) -> list[str]:
     if gsc.get("off"):
         return []
@@ -143,11 +171,16 @@ def _status_lines(b: dict[str, dict], extra: dict[str, dict]) -> list[str]:
             (t("st_x_first") if x.get("first_run") else "")
         lines.append(t("st_x", state=_state(x, ok)))
     if not hf.get("skipped"):
-        ok = "" if hf.get("error") else t("st_hf_ok", models=hf["models"]) + (t("st_first") if hf.get("first_run") else "")
+        ok = "" if hf.get("error") else t("st_hf_ok", models=hf["models"], spaces=hf.get("spaces", 0)) + (t("st_first") if hf.get("first_run") else "")
         lines.append(t("st_hf", state=_state(hf, ok)))
     ok = "" if bo.get("error") or bo.get("skipped") else t("st_breakout_ok", n=bo["searched"]) + \
         (t("st_breakout_first") if bo.get("first_run") else "")
     lines.append(t("st_breakout", state=_state(bo, ok)))
+    rv = b.get("revenue", {"skipped": True})
+    if not rv.get("skipped") or rv.get("no_key"):
+        ok = t("revenue_nokey_short") if rv.get("no_key") else "" if rv.get("error") else t("st_revenue_ok", n=rv["read"]) + \
+            (t("st_first") if rv.get("first_run") else "")
+        lines.append(t("st_revenue", state=_state(rv, ok) if not rv.get("no_key") else ok))
     for site, s in sm.get("sites", {}).items():
         state = s.get("error") or (t("st_site_first") if s.get("first_run") else t("st_site_ok", urls=s["urls"], new=s["new"]))
         lines.append(t("st_site", site=site, state=state))
@@ -164,8 +197,10 @@ def daily(cfg: dict, lead: list[dict], b: dict[str, dict], gsc: dict, rev: dict,
     names_ = named(cfg, lead)
     for r in names_[:SHOWN]:
         ex = _cell(" / ".join(e[:50] for e in r["examples"][:2]))
-        lines.append(f"| **{r['term']}** | {'; '.join(r['signals'])} | {_score(r)} | {r['known'] or t('none')} | "
+        lines.append(f"| **{r['term']}**{_marks(r)} | {'; '.join(r['signals'])} | {_score(r)} | {r['known'] or t('none')} | "
                      f"{', '.join(r['variants'][1:]) or t('dash')} | {ex} |")
+    if any(_marks(r) for r in names_[:SHOWN]):
+        lines += ["", t("tags_note")]
     rest = [r["term"] for r in lead if r not in names_][:OTHER_TERMS]
     if rest:
         lines += ["", t("other_terms") + ", ".join(rest)]
@@ -178,11 +213,45 @@ def daily(cfg: dict, lead: list[dict], b: dict[str, dict], gsc: dict, rev: dict,
             else [t("recent_none", why=recent.get("error") or t("no_new_names"))]
     lines += _breakout_lines(b["breakout"], cfg)
     lines += _new_site_lines(b.get("newsite", {"skipped": True}), cfg)
+    lines += _revenue_lines(b.get("revenue", {"skipped": True}), cfg)
     lines += _gsc_lines(gsc)
     lines += _review_lines(cfg, rev, summ)
     lines += _status_lines(b, extra)
     lines.append(t("cost", cost=_cost(b["x"], rev, b.get("newsite", {}), extra.get("usecases", {}))))
     return "\n".join(lines) + "\n"
+
+
+def _page_one(comp: dict | None) -> str:
+    """The page-one cell: verdict, weak results, difficulty, ads."""
+    if not comp:
+        return t("dash")
+    bits = [t("pc_" + comp["verdict"])]
+    if comp.get("weak") is not None:
+        bits.append(t("pc_weak", n=comp["weak"]))
+    if comp.get("kd") is not None:
+        bits.append(t("pc_kd", kd=comp["kd"]))
+    if comp.get("ads"):
+        bits.append(t("pc_ads"))
+    return " · ".join(bits)
+
+
+def _page_one_lines(cfg: dict, uc: dict) -> list[str]:
+    rows = [r for r in uc["rows"] if r.get("competition")]
+    if not rows and not uc.get("competition_errors"):
+        return []
+    lines = [t("pc_note", dr=cfg["competition"]["weak_dr"])]
+    if rows and all(r["competition"].get("weak") is None for r in rows):
+        lines.append(t("pc_no_dr"))
+    weakest = [r for r in rows if r["competition"].get("weakest")]
+    if weakest:
+        lines += ["", t("pc_weakest_h")]
+        for r in weakest:
+            w, kinds = r["competition"]["weakest"], r["competition"]["kinds"]
+            lines.append(t("pc_weakest", phrase=r["phrase"], domain=w["domain"], dr=w["dr"], pos=w["position"],
+                           kinds=", ".join(f"{t('pk_' + k)} {n}" for k, n in sorted(kinds.items(), key=lambda x: -x[1]))))
+    if uc.get("competition_errors"):
+        lines.append(t("pc_err", names="; ".join(uc["competition_errors"])))
+    return lines
 
 
 def keyword_table(cfg: dict, uc: dict) -> list[str]:
@@ -200,20 +269,22 @@ def keyword_table(cfg: dict, uc: dict) -> list[str]:
     lines += [t("uc_intro", names=", ".join(uc["names"]), proposed=uc["proposed"], relevant=uc["relevant"], kept=uc["kept"], min=c["min_volume"],
                 month=uc["volume_month"] or "?"),
               t("uc_bench", bench=uc["benchmark"], bench_daily=uc["bench_daily"]) if uc.get("bench_daily") else t("uc_bench_none", bench=uc["benchmark"]), "",
-              t("uc_cols", bench=uc["benchmark"]), "|---|---|---|---|---|---|---|---|---|---|---|"]
+              t("uc_cols", bench=uc["benchmark"]), "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in uc["rows"]:
         generic = r["kind"] == "generic"
         none = r.get("no_data")
         peak = f"{r['peak_vs']} vs {r['bench_level']}" if "peak_vs" in r else t("dash")
         lines.append(
-            f"| **{r['phrase']}**{' 🔎' if r.get('source') == 'searched' else ''}{' ⚠' if generic and r['brand'] else ''} | "
+            f"| **{r['phrase']}**{MARK[opportunity.fmt({'term': r['phrase']})]}{' 🔎' if r.get('source') == 'searched' else ''}"
+            f"{' ⚠' if generic and r['brand'] else ''} | "
             f"{t('uc_type_generic' if generic else 'uc_type_name')} | "
             f"{', '.join(r['names']) or t('dash')} | {t('dash') if none else t('uc_yes' if r['new'] else 'uc_no')} | "
             f"{r['per_day'] if 'per_day' in r else t('dash')} | {r.get('started') or t('dash')} | {peak} | "
             f"{t('dash') if none else r['peak_day']} | {'×' + str(r['momentum']) if r.get('momentum') is not None else t('dash')} | "
             f"{t('uc_now_none') if none else t('uc_now_' + r['now'])}{' (' + uc['geo'] + ')' if r.get('trend_geo') else ''} | "
-            f"{t('uc_' + r['decision'])} |")
+            f"{_page_one(r.get('competition'))} | {t('uc_' + r['decision'])}{' ↓' if r.get('demoted') else ''} |")
     lines += ["", t("uc_rules", min_daily=c["min_daily"])]
+    lines += _page_one_lines(cfg, uc)
     if any(r["kind"] == "generic" and r["brand"] for r in uc["rows"]):
         lines.append(t("uc_brand_note"))
     if any(r.get("trend_geo") for r in uc["rows"]):

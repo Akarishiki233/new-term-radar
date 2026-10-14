@@ -9,6 +9,7 @@ Signals:
   ② breakout  one new GitHub repo taking off on its own
   ③ sitemaps  pages other sites added since the last run
   ③ newsites  domains registered in the last 90 days that already rank (weekly; AIsa)
+  ⑥ revenue   products people pay for, growing fastest or newly listed (weekly; TrustMRR key)
   ④ gsc       queries your own site got impressions for, for the first time (optional)
   ⑤ review    leads from 14 days ago checked in Google Trends; hit rate per signal (AIsa)
   usecases    the generic terms behind today's names, sized against a benchmark keyword (AIsa)
@@ -36,10 +37,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import breakout, config, gsc, new_sites, notify, report, review, sitemaps, sources, store, usecases
+from . import breakout, config, gsc, new_sites, notify, report, review, revenue, sitemaps, sources, store, usecases
 from .i18n import t
 
-SKIPPABLE = {"x", "hf", "breakout", "sitemaps", "newsites", "gsc", "review", "judge", "usecases"}
+SKIPPABLE = {"x", "hf", "breakout", "sitemaps", "newsites", "revenue", "gsc", "review", "judge", "usecases"}
 
 
 def run(fn, skip: bool = False) -> dict:
@@ -82,6 +83,8 @@ def cmd_daily(args, cfg: dict, state: Path) -> int:
         "breakout": run(lambda: breakout.breakouts(cfg, state), "breakout" in args.skip),
         "sitemap": run(lambda: sitemaps.diff(cfg, state), "sitemaps" in args.skip),
         "newsite": run(lambda: new_sites.new_sites(cfg, state), "newsites" in args.skip or not weekly),
+        "revenue": run(lambda: revenue.products(cfg, state), "revenue" in args.skip or not (
+            args.revenue or date.today().weekday() == cfg["revenue"]["weekday"])),
     }
     found = run(lambda: gsc.gsc_new(cfg), "gsc" in args.skip)
     lead, judged = report.leads(cfg, blocks)
@@ -92,7 +95,8 @@ def cmd_daily(args, cfg: dict, state: Path) -> int:
     # The names to read for their generic terms: things, not words that surged (usecases.names_to_read).
     names = usecases.names_to_read(report.to_record(cfg, lead), extra["recent_sources"].get("rows", []))
     repos = {r["term"]: r["repo"] for r in lead if r.get("repo")}
-    extra["usecases"] = run(lambda: usecases.run(cfg, state, list(dict.fromkeys(names)), repos),
+    about = {r["term"]: r["about"] for r in lead if r.get("about")}      # a paying product's own description
+    extra["usecases"] = run(lambda: usecases.run(cfg, state, list(dict.fromkeys(names)), repos, texts=about),
                             "usecases" in args.skip or not cfg["usecases"]["per_day"])
     run(lambda: store.record(conn, report.usecase_leads(extra["usecases"])))
     rev = run(lambda: review.review(cfg, conn), "review" in args.skip)
@@ -167,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", help="write the report (Markdown) here; `daily` also writes a .json beside it")
     p.add_argument("--skip", default="", help="comma-separated: " + ",".join(sorted(SKIPPABLE)))
     p.add_argument("--new-sites", action="store_true", help="run the weekly new-site signal today")
+    p.add_argument("--revenue", action="store_true", help="run the weekly revenue signal today (needs TRUSTMRR_API_KEY)")
     p.add_argument("--mail", action="store_true", help="mail the report (see radar/notify.py)")
     args = p.parse_args(argv)
     args.skip = {s for s in args.skip.split(",") if s}
